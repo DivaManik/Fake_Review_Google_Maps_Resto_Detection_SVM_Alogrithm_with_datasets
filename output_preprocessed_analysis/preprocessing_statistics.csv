@@ -1,0 +1,10 @@
+Metrik,Nilai
+Total Data,7021
+Rata-rata Panjang Original (kata),21.79
+Rata-rata Panjang Preprocessed (kata),18.34
+Median Panjang Original (kata),11.00
+Median Panjang Preprocessed (kata),9.00
+Rata-rata Pengurangan (%),13.07
+Teks Kosong Setelah Preprocessing,95 (1.35%)
+Total Kata Unik,11237
+Total Kata,128772

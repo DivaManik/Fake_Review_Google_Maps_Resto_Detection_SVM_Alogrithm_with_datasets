@@ -1,0 +1,23 @@
+================================================================================
+SUMMARY PREDIKSI FAKE REVIEW
+================================================================================
+
+Input file: E:\Machine Learning\Projek Fake Review\projek v2\dataset\tes.csv
+Output file: model_output/hasil_prediksi.csv
+Total data: 20
+
+Distribusi Prediksi:
+  - REAL: 11 (55.00%)
+  - UNKNOWN: 7 (35.00%)
+  - FAKE: 2 (10.00%)
+
+Confidence Statistics:
+  - Mean: 0.5506
+  - Median: 0.7931
+  - Std: 0.4197
+
+Model Performance (Test Set):
+  - Accuracy:  0.8003
+  - Precision: 0.9059
+  - Recall:    0.6948
+  - F1-Score:  0.7864

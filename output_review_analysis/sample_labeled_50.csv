@@ -1,0 +1,77 @@
+nama,stars,text,fake_score,label,reason,has_image
+Rinda Rahma,5,"makanan nya enakkk, pelayanan juga good bgtttt...",6,FAKE,Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Frida Marina,5,,6,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+Hadi Widjaja,1,"Tempat makan yang mahal dan jorok, ada plastik di steak sirloinnya.",0,REAL,Terlihat asli,True
+Budi Santosa,5,Great....,2,REAL,Terlihat asli,True
+Abigail Ulil Albab Affendi,5,pengen ke sini,5,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+Febri Arif Saputra,4,Bit pricey,1,REAL,Terlihat asli,False
+Azjar Jhon Raghozt,5,,6,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+Faid Anin,5,,7,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Genta,5,"Yogyakarta Kitchen is the main restaurant at the Yogyakarta Marriott Hotel, and it truly exceeded my expectations—especially for lunch. The food here is incredibly flavorful, surpassing even some well-known restaurants I’ve tried elsewhere. If you’re visiting, I highly recommend making time for lunch here.
+
+For lunch, the standouts were the Gudeg Yogyakarta, Garang Asem, and Sate Maranggi. Each dish was perfectly cooked, bursting with authentic flavors, and absolutely delightful. The Gudeg, in particular, was a highlight—rich, flavorful, and a true taste of Yogyakarta’s culinary heritage.
+
+The restaurant also serves the breakfast buffet, which offers a vast selection of options, primarily focused on Indonesian cuisine from various regions. While the flavors at breakfast were good, they didn’t quite match the wow factor of the lunch menu. However, the variety and freshness were impressive. Plus, they change the menu daily, ensuring a different experience if you stay multiple nights.
+
+The ambiance is welcoming, and the staff are attentive, adding to the overall dining experience. Whether you’re staying at the hotel or just stopping by, Yogyakarta Kitchen is definitely worth visiting, especially for lunch—you won’t be disappointed!",2,REAL,Terlihat asli,True
+Nadya Khairunnisa,5,,9,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Arcelia Maleeka Haifa Maajid,4,"Aku pesan original curry ramen & kanigawa ramen, minum ocha. Uniknya ocha di sini bisa minta tambah gula. Tekstur mie oke, tingkat kepedasan bisa pilih sesuai selera (literally sambel), cuma kalau kuah buatku kurang—entah itu bumbu, atau kaldu.
+
+Nyicipin juga kuah yg lain: thai curry ramen, chicken karaage ramen, sama chicken katsu ramen. Kuah curry basicnya sama rasanya, bukan curry yg thick. Kuah yg chicken juga katsu & karaage juga sama, mirip ayam bawang. Porsi lumayan besar. Saran kalau mau beli chicken katsu mending ramennya sekalian aja cuma beda 5rb 👌🏻
+
+Service cepat, tempat sangat nyaman krn full ac. Recommended buat yg cari ramen murah meriah dengan rasa sesuai & porsi mengenyangkan!",2,REAL,Terlihat asli,True
+Sari Farrel,5,"Pelayanannya mantap, rasanya enak pasti balik lagi ke Yoshinoya",5,FAKE,Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),True
+Anindita Wisesa,5,Enaaaakkk dapet promo buy 1 get 1 cuma pake ID,3,REAL,Terlihat asli,False
+Dimas Fakhruddin,4,"🔰Food:
+Makanan di SS selalu enak, di semua outlet rasa dan kualitasnya terjaga. No comment.
+
+🔰Service:
+Pelayanannya juga baik, karena mungkin SS berhasil menerapkan SOP pelayanan, sehingga semua outlet sama kualitas pelayanannya. Untuk parkir mobil lumayan susah karena posisinya di pinggir jalan raya.
+
+🔰Atmosphere:
+Catatan untuk outlet jalan monjali ini, terutama di area makan lesehan pojok timur utara, ada hewan terbang (Mrutu) yang sangat mengganggu ketika makan, dan bahkan mungkin saja bisa masuk ke minuman atau hinggap di makanan. Benar-benar mengganggu, kebetulan saya makan pas malam hari. Bisa dilihat di video yang saya cantumkan, semoga jadi bahan evaluasi.",2,REAL,Terlihat asli,True
+Rahmania Putri Nabila,5,,8,FAKE,Bintang 5 tanpa teks; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),True
+Oktaviani Yusaningrum,5,,7,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+dicky Moch rizal,4,"Sy gak begitu sesuai dg rasa masakannya. Staf ramah banget dan helpful. Sajian gak lama, ditunggu sambil ngobrol. Ber 16 semua tersaji 20 menitan. Ala carte ya pesen sendiri2. Termasuk cepet lho. Porsi lumayan besar bisa buat sharing",1,REAL,Terlihat asli,False
+ratna sundari,5,"Kesini makan yamin, nasi rawon ayam, es teler durian, es doger dan es jeruk. Dari semua menunya gaada yg zonk samsek. Yamin yg asin dan pedas si enak banget. Rawonnya jg enak. Es teler duriannya cuma kurang 1, kurang banyak hahahahaha. Es jeruknya jg enak seger gt. harganya affordable banget jg. Wajib kesini si kalau turun di stasiun lempuyangan",3,REAL,Terlihat asli,False
+Nabilla Kirana Putriyana,5,"tempatnya sangat nyaman, recomended buat ngumpul bareng temen",4,FAKE,Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Cahyo Trio,4,Madyang,4,FAKE,Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide,False
+Dade Atman,5,"Resto yg enak buat makan bersama keluarga, teman bahkan utk sendiri.
+Lokasinya yg dekat lampu merah membuat agak susah utk keluar masuk. Menyesuaikan dg traffic light.
+
+Pelayanan baik dan ramah.
+Rasa makanan oke banget, tampilan cantik dan enak. Puas kalo abis makan di sini.
+
+Tersedia toilet.
+Parkir berbayar.",2,REAL,Terlihat asli,True
+Abim Fardiansyah,5,Enak..,6,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Fadly Moch,5,"tumben pelayanannya cepet , walaupun rasa sedikit ke asinan",3,REAL,Terlihat asli,False
+Eric,5,Mantap keren,5,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+Antonius Rujiman,5,,8,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Reviewer baru (<=2 review); Banyak review di hari yg sama (>5),False
+Teo Saputra,5,"Salah satu warmindo yg selalu ramai, mungkin karena lokasinya yg disamping persis GOR Klebengan. Dengan harga sama dengan warmindo lainnya di jogja.",1,REAL,Terlihat asli,False
+arkeon,5,uenak poll,8,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+ChD X,3,"untuk rasa gaada yang masalah, cuman dulu kayaknya gaada tukang parkir terus sekarang ada… cuman datang doang ga ngapa-ngapain… udah nanya ke kasir juga dan mengiyakan sambil minta maaf",3,REAL,Terlihat asli,False
+Naomi Elizabeth Turnip,5,,9,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+fajar adhi pangestu,5,,4,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer,False
+Antoni Firdaus,5,Tersedia resto dan ruang meeting sederhana,1,REAL,Terlihat asli,False
+Ricky Fauzi,4,,3,REAL,Terlihat asli,False
+Arya Syailendra,5,,7,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide,False
+arie ara,5,,6,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+naris aji,5,Recomended,5,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+Meike Mayasari,5,Sejuk dan menyenangkan,8,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Firdaus Pawestri,4,"The food was not the best, but the service and atmosfer is good",2,REAL,Terlihat asli,True
+Dienti Cahya,5,So goooodd👍✨️,6,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+미렌강,5,"Sushi shashiminya seger, ramennya juga sedep banget dibanding yg lain. Top markotop, apalagi ini dapet birthday traet. Rekomen yang ultah makan disini aja.",6,FAKE,Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Adnan Syarief,5,Nice ramen 👌,5,FAKE,Bintang 5 & teks sangat pendek; Tidak ada foto reviewer; Banyak review di hari yg sama (>5),False
+rizki nur rahayu,5,"Makanan & minumannya semua enak!! Tempatnya nyaman dan pelayanannya juga oke banget ramah-ramah.
+Pokoknya best banget!",3,REAL,Terlihat asli,True
+Yoppi Prayogo,5,It's a right place to enjoy your loneliness,0,REAL,Terlihat asli,True
+nabiyla ayu,5,,9,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Widya Dwi Lestari,4,Rasa makanan standar. Kentang gorengnya udah dingin,0,REAL,Terlihat asli,True
+pure greentea,5,Ayam geprek terenak dan fav anak kos,5,FAKE,Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),True
+Dwi Handoko Wisata Yogya,5,Makanannya enak dan harga bersahabat,3,REAL,Terlihat asli,False
+Ivan Studio Music Production,1,"Kalau rasa mah selera lah ya. Tapi ini berasa bukan tempat makan sih. Jorok pol. Mejanya gak di clean up banyak banget yang gak dibersihin, kalau konsepnya kita sebagai pelanggan buang sendiri. Gak ada tempat sampah yg disediakan. Kalau ada yg tumpah yg kotor tuh gak diberesin. Selama makan disana gak pernah liat sih emang yg tugas buat bersih bersih. Setiap ruangan banyak lalatnya yg super banyak gitu. Terus french frienya diwadahin gelas, ini kocak sih.",6,FAKE,Tidak ada foto reviewer; Reviewer baru (<=2 review); Bukan Local Guide; Banyak review di hari yg sama (>5),False
+Ilham widyo Nugroho,4,"Tolong banget lah bro tertipin itu parkir liar bikin males, orang udah di bilang ngga ada receh masih aja di mintain trs pas dateng ngga ada tiba2 mau pergi muncul.",4,FAKE,Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False
+felix tri,5,,4,FAKE,Bintang 5 tanpa teks; Tidak ada foto reviewer,False
+Achmad Ananta,5,"Mbak-mbaknya ramah dan full senyum.
+Bisa claim promo birthday juga 🤩",4,FAKE,Tidak ada foto reviewer; Bukan Local Guide; Banyak review di hari yg sama (>5),False

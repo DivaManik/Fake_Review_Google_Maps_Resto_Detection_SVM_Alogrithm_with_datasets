@@ -1,0 +1,5 @@
+Dataset,Total Data,FAKE,REAL
+Original,7021,4559,2462
+Undersampling,4924,2462,2462
+Oversampling,9118,4559,4559
+Kombinasi,7020,3510,3510
