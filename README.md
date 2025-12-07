@@ -409,14 +409,6 @@ F1-Score  = 2 × (Precision × Recall) / (Precision + Recall)
 | `lambda_param` | 0.001 - 0.1 | Semakin besar: model lebih sederhana (mencegah overfitting) |
 | `n_iterations` | 500 - 5000 | Lebih banyak: lebih akurat tapi lebih lama |
 
-**Tips Tuning SVM:**
-```
-1. Mulai dengan learning_rate = 0.01
-2. Jika loss tidak turun, kurangi learning_rate
-3. Jika overfitting (train bagus, test jelek), naikkan lambda_param
-4. Gunakan early_stopping untuk otomatis berhenti
-```
-
 ### 2. Tuning Random Forest
 
 | Parameter | Rentang | Pengaruh |
@@ -427,14 +419,6 @@ F1-Score  = 2 × (Precision × Recall) / (Precision + Recall)
 | `min_samples_leaf` | 1 - 5 | Lebih besar = mencegah overfitting |
 | `max_features` | "sqrt", "log2", int | Variasi fitur per split |
 
-**Tips Tuning Random Forest:**
-```
-1. Mulai dengan n_estimators = 30, max_depth = 10
-2. Jika overfitting, kurangi max_depth atau naikkan min_samples_leaf
-3. Jika underfitting, tambah n_estimators atau max_depth
-4. Gunakan OOB score untuk estimasi awal
-```
-
 ### 3. Tuning Naive Bayes
 
 | Parameter | Rentang | Pengaruh |
@@ -443,36 +427,6 @@ F1-Score  = 2 × (Precision × Recall) / (Precision + Recall)
 | `text_weight` | 0.3 - 0.8 | Bobot fitur teks vs numerik |
 | `numeric_weight` | 0.2 - 0.7 | Bobot fitur numerik vs teks |
 | `max_features_tfidf` | 500 - 2000 | Jumlah kata dalam vocabulary |
-
-**Tips Tuning Naive Bayes:**
-```
-1. alpha = 1.0 biasanya sudah cukup baik
-2. Sesuaikan text_weight dan numeric_weight berdasarkan data
-3. Jika teks lebih informatif, naikkan text_weight
-4. Jika fitur numerik penting, naikkan numeric_weight
-```
-
-### Grid Search Manual
-
-Contoh cara melakukan tuning manual:
-
-```python
-# Contoh Grid Search untuk SVM
-best_score = 0
-best_params = {}
-
-for lr in [0.001, 0.01, 0.1]:
-    for lam in [0.001, 0.01, 0.1]:
-        model = LinearSVM(learning_rate=lr, lambda_param=lam)
-        model.fit(X_train, y_train)
-        score = calculate_f1(model.predict(X_val), y_val)
-
-        if score > best_score:
-            best_score = score
-            best_params = {'lr': lr, 'lambda': lam}
-
-print(f"Best params: {best_params}")
-```
 
 ---
 
