@@ -1,0 +1,17 @@
+Random Forest Manual Prediction Summary
+============================================================
+Input: E:\Machine_Learning\Projek Fake Review\projek v2\dataset\tes.csv
+Output: E:\Machine_Learning\Projek Fake Review\projek v2\rf_model_output\tes_predictions.csv
+Rows: 20
+
+Prediction Distribution:
+  REAL: 13
+  FAKE: 7
+
+Confidence Stats:
+  Mean: 0.7933
+  Median: 0.8500
+
+Post-Processing (Gibberish Override):
+  Total overridden REAL -> FAKE: 1
+  Overridden rows: [12]
