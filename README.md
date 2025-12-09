@@ -63,7 +63,7 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ALUR KERJA SISTEM                               │
+│                              ALUR KERJA SISTEM                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 
    ┌──────────────────┐
@@ -75,29 +75,29 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
             ▼
    ┌─────────────────────────────────────────────────────────────────┐
    │ 2. LABELING OTOMATIS (labeling_eda.py)                          │
-   │                                                                  │
+   │                                                                 │
    │  Menghitung fake_score berdasarkan kriteria:                    │
    │  - Bintang 5 tanpa teks (+3) / teks pendek (+2)                 │
-   │  - Tidak ada foto reviewer (+1)                                  │
-   │  - Detail rating semua 5 (+1)                                    │
-   │  - Reviewer baru ≤2 review (+2)                                  │
-   │  - Bukan Local Guide (+1)                                        │
-   │  - Konteks review kosong (+1)                                    │
+   │  - Tidak ada foto reviewer (+1)                                 │
+   │  - Detail rating semua 5 (+1)                                   │
+   │  - Reviewer baru ≤2 review (+2)                                 │
+   │  - Bukan Local Guide (+1)                                       │
+   │  - Konteks review kosong (+1)                                   │
    │  - Banyak review di hari sama >5 (+2)                           │
-   │                                                                  │
+   │                                                                 │
    │  Label: fake_score >= 4 → FAKE, else → REAL                     │
-   │  Output: google_review_labeled.csv                               │
+   │  Output: google_review_labeled.csv                              │
    └────────┬────────────────────────────────────────────────────────┘
             │
             ▼
-   ┌─────────────────────────────────────────────────────────────────┐
-   │ 3. PREPROCESSING (preprocessing.py)                             │
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ 3. PREPROCESSING (preprocessing.py)                              │
    │                                                                  │
-   │  Case Folding → Cleansing → Normalisasi → Tokenizing →          │
+   │  Case Folding → Cleansing → Normalisasi → Tokenizing →           │
    │  Stopword Removal → Stemming                                     │
    │                                                                  │
    │  Output: kolom text_preprocessed                                 │
-   └────────┬────────────────────────────────────────────────────────┘
+   └────────┬─────────────────────────────────────────────────────────┘
             │
             ▼
    ┌──────────────────┐
@@ -111,7 +111,7 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
             ▼
    ┌─────────────────────────────────────────────────────────────────┐
    │ 5. FEATURE ENGINEERING                                          │
-   │                                                                  │
+   │                                                                 │
    │  ┌─────────────────┐   ┌─────────────────┐   ┌───────────────┐  │
    │  │   TF-IDF        │   │ Numeric Features│   │ Text Quality  │  │
    │  │ (1000 fitur)    │   │ (18+ fitur)     │   │ Features      │  │
@@ -129,12 +129,12 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
             ▼
    ┌─────────────────────────────────────────────────────────────────┐
    │ 6. TRAINING MODEL                                               │
-   │                                                                  │
-   │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐       │
-   │  │     SVM       │  │ Random Forest │  │  Naive Bayes  │       │
-   │  │  (Linear,     │  │ (30 trees,    │  │   (Hybrid:    │       │
-   │  │   manual)     │  │  CART, Gini)  │  │  MNB + GNB)   │       │
-   │  └───────────────┘  └───────────────┘  └───────────────┘       │
+   │                                                                 │
+   │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐        │
+   │  │     SVM       │  │ Random Forest │  │  Naive Bayes  │        │
+   │  │  (Linear,     │  │ (30 trees,    │  │   (Hybrid:    │        │
+   │  │   manual)     │  │  CART, Gini)  │  │  MNB + GNB)   │        │
+   │  └───────────────┘  └───────────────┘  └───────────────┘        │
    └────────┬────────────────────────────────────────────────────────┘
             │
             ▼
@@ -299,22 +299,14 @@ Mengubah teks menjadi vektor numerik berdasarkan frekuensi dan kepentingan kata.
 
 ## Kombinasi Fitur dalam Training Model
 
-### ❌ BUKAN NUMERIC ONLY! ✅ HYBRID APPROACH
-
-**Jawaban singkat:**
-> Sistem deteksi fake review **BUKAN hanya menggunakan numeric indicators**, melainkan **KOMBINASI 3 tipe fitur berbeda** yang saling melengkapi:
-> 1. **TF-IDF Text Features** (1000 fitur) - Makna teks
-> 2. **Numeric Indicators** (18+ fitur) - Pola perilaku & metadata
-> 3. **Text Quality Features** (6 fitur) - Deteksi gibberish & spam
-
 ### Struktur Fitur yang Digunakan
 
-**BUKAN hanya mengandalkan fitur numeric, melainkan KOMBINASI 3 tipe fitur:**
+**KOMBINASI 3 tipe fitur:**
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    COMBINED FEATURES (40+ fitur)                │
-│                                                                  │
+│                                                                 │
 │  ┌──────────────────────┐  ┌──────────────────────┐             │
 │  │  TF-IDF Text Features│  │  Numeric Indicators  │             │
 │  │   (1000 fitur)       │  │    (18+ fitur)       │             │
@@ -336,13 +328,13 @@ Mengubah teks menjadi vektor numerik berdasarkan frekuensi dan kepentingan kata.
 │           │  │ • tq_valid_word_ratio│  │                        │
 │           │  │ • tq_gibberish_score │  │                        │
 │           │  └──────────────────────┘  │                        │
-│           └────────────────┬────────────┘                        │
-│                            │                                     │
-│                    ┌───────▼────────┐                            │
-│                    │  Concatenated  │                            │
-│                    │  Feature Matrix│                            │
-│                    │  untuk Training│                            │
-│                    └────────────────┘                            │
+│           └────────────────┬────────────┘                       │
+│                            │                                    │
+│                    ┌───────▼────────┐                           │
+│                    │  Concatenated  │                           │
+│                    │  Feature Matrix│                           │
+│                    │  untuk Training│                           │
+│                    └────────────────┘                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -451,7 +443,7 @@ X_combined = np.hstack([X_text, X_numeric, X_text_quality])
 model.fit(X_combined, y)
 ```
 
-### Catatan Penting: Konsistensi Across Models
+### Konsistensi Across Models
 
 ✅ **Ketiga model (SVM, RF, NB) menggunakan fitur yang IDENTIK:**
 - TF-IDF configuration yang sama (max_features=1000, unigram)
