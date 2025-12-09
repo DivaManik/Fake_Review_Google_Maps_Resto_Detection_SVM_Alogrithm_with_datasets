@@ -297,6 +297,172 @@ Mengubah teks menjadi vektor numerik berdasarkan frekuensi dan kepentingan kata.
 
 ---
 
+## Kombinasi Fitur dalam Training Model
+
+### ❌ BUKAN NUMERIC ONLY! ✅ HYBRID APPROACH
+
+**Jawaban singkat:**
+> Sistem deteksi fake review **BUKAN hanya menggunakan numeric indicators**, melainkan **KOMBINASI 3 tipe fitur berbeda** yang saling melengkapi:
+> 1. **TF-IDF Text Features** (1000 fitur) - Makna teks
+> 2. **Numeric Indicators** (18+ fitur) - Pola perilaku & metadata
+> 3. **Text Quality Features** (6 fitur) - Deteksi gibberish & spam
+
+### Struktur Fitur yang Digunakan
+
+**BUKAN hanya mengandalkan fitur numeric, melainkan KOMBINASI 3 tipe fitur:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    COMBINED FEATURES (40+ fitur)                │
+│                                                                  │
+│  ┌──────────────────────┐  ┌──────────────────────┐             │
+│  │  TF-IDF Text Features│  │  Numeric Indicators  │             │
+│  │   (1000 fitur)       │  │    (18+ fitur)       │             │
+│  │                      │  │                      │             │
+│  │ • Frekuensi kata     │  │ • text_word_count    │             │
+│  │ • Bobot TF-IDF       │  │ • exclamation_count  │             │
+│  │ • Representasi teks  │  │ • stars_norm         │             │
+│  │   (vocabulary size   │  │ • has_image          │             │
+│  │    = 1000)           │  │ • reviewer_count_log │             │
+│  │                      │  │ • Pattern FAKE       │             │
+│  │                      │  │ • Date features      │             │
+│  └──────────────────────┘  └──────────────────────┘             │
+│           │                            │                        │
+│           │  ┌──────────────────────┐  │                        │
+│           │  │ Text Quality Features│  │                        │
+│           │  │  (6 fitur opsional)  │  │                        │
+│           │  │                      │  │                        │
+│           │  │ • tq_entropy         │  │                        │
+│           │  │ • tq_valid_word_ratio│  │                        │
+│           │  │ • tq_gibberish_score │  │                        │
+│           │  └──────────────────────┘  │                        │
+│           └────────────────┬────────────┘                        │
+│                            │                                     │
+│                    ┌───────▼────────┐                            │
+│                    │  Concatenated  │                            │
+│                    │  Feature Matrix│                            │
+│                    │  untuk Training│                            │
+│                    └────────────────┘                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Rincian Lengkap Fitur Indikator
+
+#### **1. TF-IDF Text Features (1000 fitur)**
+Fitur ini menangkap **semantik dan makna teks** secara numerik:
+- **Purpose:** Membedakan kata-kata yang sering muncul di fake review vs real review
+- **Method:** Term Frequency-Inverse Document Frequency
+- **Contoh:** Kata seperti "bagus", "recommended", "enak" punya bobot berbeda di FAKE vs REAL
+- **Jumlah Features:** 1000 (max vocabulary size)
+- **Type:** Continuous (0.0 - 1.0)
+
+#### **2. Numeric Indicators (18+ fitur)**
+Fitur ini menangkap **karakteristik metadata dan pola perilaku**:
+
+**Text Structure Indicators (7 fitur):**
+- `text_word_count` - Panjang review (fake lebih pendek)
+- `text_char_count` - Jumlah karakter
+- `avg_word_length` - Panjang rata-rata kata
+- `exclamation_count` - Tanda seru (fake lebih emosional)
+- `question_count` - Tanda tanya
+- `punctuation_count` - Tanda baca total
+- `uppercase_word_ratio` - Huruf kapital (spam lebih banyak)
+
+**Rating & Reviewer Behavior (6 fitur):**
+- `stars_norm` - Rating bintang (fake cenderung 5 bintang)
+- `reviewer_count_log` - Pengalaman reviewer (fake dari reviewer baru)
+- `is_local_guide` - Status Local Guide (real reviewer trusted)
+- `has_image` - Ada foto (fake jarang punya foto)
+- `n_images` - Jumlah foto (real lebih detail)
+- `detail_rating_all_5` - Semua rating detail = 5 (suspiciously perfect)
+
+**Temporal & Frequency Patterns (5 fitur):**
+- `publish_hour` - Jam publikasi
+- `same_day_count` - Review banyak di hari sama (coordinated attack)
+- `pattern_5star_short` - 5 bintang + review pendek (classic fake pattern)
+- `pattern_5star_nophoto` - 5 bintang tanpa foto (another fake indicator)
+- `pattern_new_reviewer` - Reviewer ≤2 review total (suspicious new account)
+- `pattern_same_day` - Banyak review di hari yang sama (fake brigade)
+
+**Fitur Aggregated:**
+```
+Total Numeric Features = 18 fitur
+```
+
+#### **3. Text Quality Features (6 fitur opsional)**
+Fitur ini mendeteksi **anomali teks dan spam signals**:
+- `tq_entropy` - Shannon entropy (random/gibberish text)
+- `tq_valid_word_ratio` - % kata valid dalam kamus (gibberish detection)
+- `tq_avg_word_length` - Panjang rata-rata kata (quality check)
+- `tq_gibberish_score` - Skor gabungan deteksi gibberish
+- `tq_repeat_char_ratio` - Karakter berulang (spam "oooooo", "eeeeee")
+- `tq_consonant_cluster_ratio` - Cluster konsonan (gibberish indicator)
+
+### Alasan Menggunakan Kombinasi Fitur
+
+| Fitur Type | Alasan Penggunaan | Contoh Deteksi |
+|------------|-------------------|-----------------|
+| **TF-IDF (Text)** | Menangkap **makna dan topik** teks | Fake review lebih sering menggunakan kata umum ("bagus", "recommended") |
+| **Numeric Indicators** | Menangkap **pola perilaku dan metadata** | Fake review dari akun baru, 5 bintang tanpa foto |
+| **Text Quality** | Mendeteksi **spam dan gibberish** | Deteksi review yang ditulis bukan manusia atau spam |
+
+**Kombinasi ketiganya penting karena:**
+1. ✅ **TF-IDF saja:** Bisa tertipu dengan review pendek yang valid secara bahasa
+2. ✅ **Numeric saja:** Bisa salah classify karena review bintang 5 bisa legitimate (food blogger)
+3. ✅ **Ketiganya bersama:** Saling melengkapi untuk deteksi multi-dimensional
+
+### Feature Engineering Pipeline di Training
+
+Setiap model (SVM, Random Forest, Naive Bayes) mengikuti pipeline yang sama:
+
+```python
+# 1. Text Preprocessing (Sastrawi)
+text_preprocessed = case_folding() 
+                    → cleansing() 
+                    → normalization() 
+                    → stopword_removal() 
+                    → stemming()
+
+# 2. TF-IDF Vectorization
+X_text = TfidfVectorizer(max_features=1000).fit_transform(text_preprocessed)
+# Output shape: (n_samples, 1000)
+
+# 3. Numeric Features Extraction
+numeric_features = [
+    'text_word_count', 'text_char_count', 'avg_word_length',
+    'exclamation_count', 'question_count', 'punctuation_count', 
+    'uppercase_word_ratio', 'stars_norm', 'has_image', 'n_images',
+    'reviewer_count_log', 'is_local_guide', 'detail_rating_all_5',
+    'same_day_count', 'pattern_5star_short', 'pattern_5star_nophoto',
+    'pattern_new_reviewer', 'pattern_same_day'
+]
+X_numeric = df[numeric_features].fillna(0).values
+# Output shape: (n_samples, 18)
+
+# 4. Text Quality Features (Optional)
+text_quality_features = extract_text_quality_features(df)
+# Output: 6 additional features
+
+# 5. Feature Concatenation
+X_combined = np.hstack([X_text, X_numeric, X_text_quality])
+# Final shape: (n_samples, 1000 + 18 + 6 = 1024 fitur)
+
+# 6. Training Models
+model.fit(X_combined, y)
+```
+
+### Catatan Penting: Konsistensi Across Models
+
+✅ **Ketiga model (SVM, RF, NB) menggunakan fitur yang IDENTIK:**
+- TF-IDF configuration yang sama (max_features=1000, unigram)
+- Numeric features yang sama (18 fitur)
+- Text quality features yang sama
+- Preprocessing pipeline yang sama
+
+Ini memastikan **fair comparison** antara ketiga algoritma!
+
+---
+
 ## Algoritma yang Digunakan
 
 ### 1. Support Vector Machine (SVM)
