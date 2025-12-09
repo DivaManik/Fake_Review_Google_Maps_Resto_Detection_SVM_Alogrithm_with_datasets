@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 import string
+import os
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
 
@@ -191,7 +192,7 @@ def main():
 
     # Load data
     print("\n[1/4] Membaca dataset...")
-    df = pd.read_csv('label_output/google_review_labeled.csv')
+    df = pd.read_csv('./dataset_organik.csv')
     print(f"Total data awal: {len(df)} baris")
 
     # Hapus baris dengan kolom ulasan (text) kosong
@@ -228,8 +229,10 @@ def main():
 
     # Simpan hasil
     print("\n[4/4] Menyimpan hasil preprocessing...")
-    output_file = 'label_output/google_review_preprocessed.csv'
-    df.to_csv(output_file, index=False)
+    output_dir = 'data_preprocessed'
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, 'google_review_preprocessed.csv')
+    df.to_csv(output_file, index=False, encoding='utf-8-sig')
     print(f"File berhasil disimpan: {output_file}")
 
     # Statistik

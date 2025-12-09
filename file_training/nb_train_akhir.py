@@ -2,13 +2,14 @@
 # train_naive_bayes_multifeature.py
 """
 Naive Bayes multi-feature training pipeline (manual TF-IDF + Hybrid Naive Bayes)
-- Uses same feature engineering as your RF & SVM scripts:
+- Uses robust feature engineering (same as RF & SVM):
   - header normalization & auto-mapping
   - Sastrawi preprocessing (Indonesian)
   - robust reviewImageUrls parsing (lists / JSON / CSV-like)
   - text quality detector integration (optional)
   - TF-IDF manual (max_features)
   - Numeric/pattern features identical to RF/SVM
+  - StandardScaler for numeric features
 - Saves model and metrics to output dir
 """
 
@@ -177,7 +178,7 @@ def parse_image_field(x):
 # Text quality detector (optional)
 # ---------------------------
 try:
-    from text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
+    from file_testing.text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
     HAS_TQ = True
 except Exception:
     HAS_TQ = False
@@ -315,6 +316,7 @@ class HybridNaiveBayes:
         self.classes = None
 
     def fit(self, X_text, X_numeric, y):
+        # fit both components
         self.multinomial_nb.fit(X_text, y)
         self.gaussian_nb.fit(X_numeric, y)
         self.classes = np.unique(y)
@@ -330,6 +332,26 @@ class HybridNaiveBayes:
     def predict(self, X_text, X_numeric):
         proba = self.predict_proba(X_text, X_numeric)
         return self.classes[np.argmax(proba, axis=1)]
+
+# ---------------------------
+# Standard Scaler for numeric features
+# ---------------------------
+class StandardScalerSimple:
+    def __init__(self):
+        self.mean_ = None
+        self.scale_ = None
+
+    def fit(self, X):
+        self.mean_ = np.mean(X, axis=0)
+        self.scale_ = np.std(X, axis=0)
+        self.scale_[self.scale_ == 0] = 1.0
+
+    def transform(self, X):
+        return (X - self.mean_) / self.scale_
+
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
 
 # ---------------------------
 # Feature engineering (reuse robust)
@@ -453,7 +475,7 @@ def print_confusion_matrix(cm):
 # MAIN training pipeline
 # ---------------------------
 def main():
-    INPUT = "dataset_balance/google_review_balanced_combined.csv"  # ganti sesuai path
+    INPUT = "../dataset_balance/google_review_balanced_undersampling.csv"  # ganti sesuai path
     OUTDIR = "nb_model_output"
     os.makedirs(OUTDIR, exist_ok=True)
 
@@ -488,29 +510,34 @@ def main():
         'pattern_5star_short','pattern_5star_nophoto','pattern_new_reviewer','pattern_same_day'
     ] + text_quality_features
 
+    # ensure numeric columns exist
     for f in numeric_features:
         if f not in df.columns:
             df[f] = 0.0
 
     X_num = df[numeric_features].fillna(0).values.astype(float)
 
+    # Standard scale numeric features (important for Gaussian NB)
+    scaler = StandardScalerSimple()
+    X_num_scaled = scaler.fit_transform(X_num)
+
     # Shuffle + split
     y = df['label'].map({'FAKE':1, 'REAL':-1}).values
     rng = np.random.RandomState(RANDOM_SEED)
     perm = rng.permutation(len(X_text))
     X_text = X_text[perm]
-    X_num = X_num[perm]
+    X_num_scaled = X_num_scaled[perm]
     y = y[perm]
 
     split_idx = int(len(X_text)*(1-TEST_SIZE))
     X_train_text, X_test_text = X_text[:split_idx], X_text[split_idx:]
-    X_train_num, X_test_num = X_num[:split_idx], X_num[split_idx:]
+    X_train_num, X_test_num = X_num_scaled[:split_idx], X_num_scaled[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
     print("Train rows:", len(y_train), "Test rows:", len(y_test))
 
     # Train Hybrid Naive Bayes
     nb = HybridNaiveBayes(alpha=ALPHA, text_weight=TEXT_WEIGHT, numeric_weight=NUMERIC_WEIGHT)
-    print("Training Hybrid Naive Bayes...")
+    print("Training Hybrid Naive Bayes (text + numeric)...")
     nb.fit(X_train_text, X_train_num, y_train)
 
     # Evaluate
@@ -528,6 +555,7 @@ def main():
     model_data = {
         'nb_model': nb,
         'tfidf': tfidf,
+        'scaler': scaler,
         'numeric_features': numeric_features,
         'max_features_tfidf': MAX_FEATURES_TFIDF,
         'train_metrics': train_metrics,
@@ -550,20 +578,36 @@ def main():
     metrics_df.to_csv(metrics_file, index=False)
     print("Saved metrics summary:", metrics_file)
 
-    # simple bar plot
-    fig, ax = plt.subplots(figsize=(8,5))
+    # Plot metrics visualization (values above bars)
+    metrics_plot = os.path.join(OUTDIR, "metrics_visualization.png")
+    fig, ax = plt.subplots(figsize=(10, 6))
     x = np.arange(len(metrics_df['Set']))
     width = 0.2
-    ax.bar(x - width/2, metrics_df['Accuracy'], width, label='Accuracy')
-    ax.bar(x + width/2, metrics_df['F1'], width, label='F1')
+
+    bars1 = ax.bar(x - 1.5*width, metrics_df['Accuracy'], width, label='Accuracy', alpha=0.8, color='steelblue')
+    bars2 = ax.bar(x - 0.5*width, metrics_df['Precision'], width, label='Precision', alpha=0.8, color='forestgreen')
+    bars3 = ax.bar(x + 0.5*width, metrics_df['Recall'], width, label='Recall', alpha=0.8, color='darkorange')
+    bars4 = ax.bar(x + 1.5*width, metrics_df['F1'], width, label='F1 Score', alpha=0.8, color='crimson')
+
+    for bars in [bars1, bars2, bars3, bars4]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    ax.set_xlabel('Dataset', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('Naive Bayes Performance Metrics', fontsize=14, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(metrics_df['Set'])
-    ax.set_ylim(0,1.05)
-    ax.legend()
+    ax.legend(loc='upper right')
+    ax.set_ylim(0, 1.15)
+    ax.grid(axis='y', alpha=0.3)
+
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTDIR,'metrics_plot.png'), dpi=150, bbox_inches='tight')
+    plt.savefig(metrics_plot, dpi=150, bbox_inches='tight')
     plt.close()
-    print("Saved metrics_plot.png")
+    print("Saved metrics visualization:", metrics_plot)
 
     print("TRAINING COMPLETE.")
 

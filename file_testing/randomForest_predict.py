@@ -9,11 +9,64 @@ Prediksi fake review menggunakan RandomForestManual (tanpa sklearn)
 
 import os
 import math
+import re
 import numpy as np
 import pandas as pd
 import pickle
 from collections import Counter, defaultdict
 from typing import Optional, List
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
+
+# Inisialisasi Sastrawi
+factory_stemmer = StemmerFactory()
+stemmer = factory_stemmer.create_stemmer()
+
+factory_stopword = StopWordRemoverFactory()
+stopword_remover = factory_stopword.create_stop_word_remover()
+
+# Kamus normalisasi
+normalization_dict = {
+    'gak': 'tidak', 'ga': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak', 'gk': 'tidak',
+    'tdk': 'tidak', 'bgt': 'banget', 'bgd': 'banget', 'bngt': 'banget', 'emg': 'memang',
+    'udh': 'sudah', 'udah': 'sudah', 'blm': 'belum', 'jg': 'juga', 'dgn': 'dengan',
+    'yg': 'yang', 'utk': 'untuk', 'sy': 'saya', 'kl': 'kalau', 'klo': 'kalau',
+    'thx': 'terima kasih', 'thanks': 'terima kasih', 'mantul': 'mantap', 'mantep': 'mantap',
+    'rekomend': 'rekomendasi', 'rekomen': 'rekomendasi', 'recommended': 'rekomendasi',
+}
+
+# ========================================================
+# === PREPROCESSING FUNCTION ===
+# ========================================================
+
+def preprocess_text(text):
+    """Preprocessing text untuk prediksi"""
+    if pd.isna(text) or str(text).strip() == '':
+        return ''
+
+    # Case folding
+    text = str(text).lower()
+
+    # Cleansing
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'#\w+', '', text)
+    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'\d+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Normalisasi
+    words = text.split()
+    words = [normalization_dict.get(word, word) for word in words]
+    text = ' '.join(words)
+
+    # Stopword removal
+    text = stopword_remover.remove(text)
+
+    # Stemming
+    text = stemmer.stem(text)
+
+    return text
 
 # ========================================================
 # === Manual Random Forest Classes (Required for Pickle) ===
@@ -308,97 +361,132 @@ except Exception:
         df["tq_entropy"] = 0.0
         df["tq_valid_word_ratio"] = 0.0
         df["tq_avg_word_length"] = 0.0
+        df["tq_gibberish_score"] = 0.0
+        df["tq_repeat_char_ratio"] = 0.0
+        df["tq_consonant_cluster_ratio"] = 0.0
         return df
 
     def get_text_quality_feature_names():
-        return ["tq_entropy", "tq_valid_word_ratio", "tq_avg_word_length"]
+        return ["tq_entropy", "tq_valid_word_ratio", "tq_avg_word_length", "tq_gibberish_score", "tq_repeat_char_ratio", "tq_consonant_cluster_ratio"]
+
+# ========================================================
+# === Helper Functions for Robust Feature Engineering ===
+# ========================================================
+
+def parse_image_field(x):
+    """Parse reviewImageUrls field (robust parser)"""
+    if pd.isna(x):
+        return []
+    if isinstance(x, (list, tuple)):
+        raw = list(x)
+    else:
+        s = str(x).strip()
+        try:
+            import json
+            parsed = json.loads(s)
+            if isinstance(parsed, (list, tuple)):
+                raw = parsed
+            else:
+                raw = [parsed]
+        except Exception:
+            try:
+                import ast
+                parsed = ast.literal_eval(s)
+                if isinstance(parsed, (list, tuple)):
+                    raw = list(parsed)
+                else:
+                    raw = [parsed]
+            except Exception:
+                if ',' in s and not s.startswith('http'):
+                    raw = [p.strip() for p in s.split(',') if p.strip()!='']
+                elif ';' in s:
+                    raw = [p.strip() for p in s.split(';') if p.strip()!='']
+                elif '|' in s:
+                    raw = [p.strip() for p in s.split('|') if p.strip()!='']
+                else:
+                    if s.lower() in ('', 'nan', 'none', '[]'):
+                        raw = []
+                    else:
+                        raw = [s]
+    clean = []
+    for item in raw:
+        if item is None: continue
+        t = str(item).strip()
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1].strip()
+        if t == '' or t.lower() in ('nan','none','null'): continue
+        clean.append(t)
+    return clean
 
 # ========================================================
 # === Feature Engineering (Identical to Training Script) ===
 # ========================================================
 
 def extract_features(df):
-    print("[FEATURES] building features...")
+    """Extract semua fitur untuk prediksi (SAMA PERSIS dengan training script)"""
+    print("  Extracting features...")
 
-    # Pastikan text_preprocessed ada
-    if "text_preprocessed" not in df.columns:
-        if "text" in df.columns:
-            df["text_preprocessed"] = df["text"].fillna("").astype(str)
-        else:
-            df["text_preprocessed"] = ""
+    # basic text features
+    df['text_word_count'] = df['text_preprocessed'].apply(lambda x: len(str(x).split()))
+    df['text_char_count'] = df['text_preprocessed'].apply(lambda x: len(str(x)))
+    df['avg_word_length'] = df['text_preprocessed'].apply(lambda x: np.mean([len(w) for w in str(x).split()]) if len(str(x).split())>0 else 0.0)
+    df['exclamation_count'] = df['text_preprocessed'].str.count('!').fillna(0).astype(int)
+    df['question_count'] = df['text_preprocessed'].str.count(r'\?').fillna(0).astype(int)
+    df['punctuation_count'] = df['text_preprocessed'].str.count(r'[.,;:!?"\'()\\-]').fillna(0).astype(int)
+    df['uppercase_word_count'] = df['text_preprocessed'].apply(lambda s: sum(1 for w in str(s).split() if w.isupper()))
+    df['uppercase_word_ratio'] = df['uppercase_word_count'] / df['text_word_count'].replace(0,1)
 
-    df["text_preprocessed"] = df["text_preprocessed"].fillna("").astype(str)
+    # stars & reviewer
+    df['stars'] = df['stars'].fillna(0).astype(float)
+    df['stars_norm'] = df['stars'] / 5.0
+    df['reviewer_count'] = pd.to_numeric(df['reviewerNumberOfReviews'], errors='coerce').fillna(0).astype(float)
+    df['reviewer_count_log'] = np.log1p(df['reviewer_count'])
+    df['is_local_guide'] = df['isLocalGuide'].apply(lambda x: 1 if str(x).lower() in ('1','true','yes') else 0)
 
-    # Basic text features
-    df["text_word_count"] = df["text_preprocessed"].apply(lambda x: len(str(x).split()))
-    df["text_char_count"] = df["text_preprocessed"].apply(lambda x: len(str(x)))
-    df["avg_word_length"] = df["text_preprocessed"].apply(
-        lambda x: np.mean([len(w) for w in str(x).split()]) if len(str(x).split()) > 0 else 0.0
-    )
-    df["exclamation_count"] = df["text_preprocessed"].str.count("!").fillna(0).astype(int)
-    df["question_count"] = df["text_preprocessed"].str.count(r"\?").fillna(0).astype(int)
-    df["punctuation_count"] = df["text_preprocessed"].str.count(r'[.,;:!?"\'()\\-]').fillna(0).astype(int)
-    df["uppercase_word_count"] = df["text_preprocessed"].apply(lambda s: sum(1 for w in str(s).split() if w.isupper()))
-    df["uppercase_word_ratio"] = df["uppercase_word_count"] / df["text_word_count"].replace(0, 1)
+    # images (using robust parser)
+    print("  Parsing reviewImageUrls ...")
+    df['review_images_list'] = df['reviewImageUrls'].apply(parse_image_field)
+    df['n_images'] = df['review_images_list'].apply(lambda lst: len(lst))
+    df['has_image'] = (df['n_images'] > 0).astype(int)
 
-    # Stars normalized
-    df["stars_norm"] = df["stars"].fillna(0).astype(float) / 5.0 if "stars" in df else 0.0
-
-    # Has image
-    if "reviewImageUrls" not in df.columns:
-        df["reviewImageUrls"] = np.nan
-    df["has_image"] = df["reviewImageUrls"].apply(
-        lambda x: 0 if pd.isna(x) or str(x).strip()=="" or str(x).lower()=="nan" else 1
-    )
-
-    # Reviewer info
-    if "reviewerNumberOfReviews" not in df.columns:
-        df["reviewerNumberOfReviews"] = 0
-    df["reviewer_count"] = df["reviewerNumberOfReviews"].fillna(0).astype(float)
-    df["reviewer_count_log"] = np.log1p(df["reviewer_count"])
-
-    # Local guide
-    if "isLocalGuide" not in df.columns:
-        df["isLocalGuide"] = 0
-    df["is_local_guide"] = df["isLocalGuide"].apply(lambda x: 1 if str(x).lower() in ["true","1","yes"] else 0)
-
-    # Detail rating
+    # detail rating all 5
     def check_all_fives(x):
-        if pd.isna(x) or str(x).strip()=="":
-            return 0
         try:
-            nums = [float(s) for s in str(x).replace(",", " ").split() if s.replace(".","").isdigit()]
-            if len(nums)>0:
-                return int(all(n==5.0 for n in nums))
+            nums = [float(s) for s in str(x).replace(',', ' ').split() if s.replace('.','').isdigit()]
+            return 1 if (len(nums)>0 and all(n==5.0 for n in nums)) else 0
         except:
             return 0
-        return 0
+    df['detail_rating_all_5'] = df['reviewDetailedRating'].apply(check_all_fives)
 
-    if "reviewDetailedRating" not in df.columns:
-        df["reviewDetailedRating"] = ""
-    df["detail_rating_all_5"] = df["reviewDetailedRating"].apply(check_all_fives)
-
-    # Time features
-    df["published_date"] = pd.to_datetime(df.get("publishedAtDate", None), errors="coerce")
-    df["publish_hour"] = df["published_date"].dt.hour.fillna(0).astype(int)
-    df["publish_day"] = df["published_date"].dt.date
-
-    if df["publish_day"].notna().sum() > 0:
-        day_counts = df.groupby("publish_day").size()
-        df["same_day_count"] = df["publish_day"].map(day_counts).fillna(1).astype(int)
+    # published date
+    df['published_date'] = pd.to_datetime(df['publishedAtDate'], errors='coerce')
+    df['publish_hour'] = df['published_date'].dt.hour.fillna(0).astype(int)
+    df['publish_day'] = df['published_date'].dt.date
+    if df['publish_day'].notna().sum() > 0:
+        day_counts = df.groupby('publish_day').size()
+        df['same_day_count'] = df['publish_day'].map(day_counts).fillna(1).astype(int)
     else:
-        df["same_day_count"] = 1
+        df['same_day_count'] = 1
 
-    # Suspicious patterns
-    df["pattern_5star_short"] = ((df["stars"] == 5) & (df["text_word_count"] < 5)).astype(int)
-    df["pattern_5star_nophoto"] = ((df["stars"] == 5) & (df["has_image"] == 0)).astype(int)
-    df["pattern_new_reviewer"] = (df["reviewer_count"] <= 2).astype(int)
-    df["pattern_same_day"] = (df["same_day_count"] > 5).astype(int)
+    # patterns
+    df['pattern_5star_short'] = ((df['stars'] == 5) & (df['text_word_count'] < 5)).astype(int)
+    df['pattern_5star_nophoto'] = ((df['stars'] == 5) & (df['has_image'] == 0)).astype(int)
+    df['pattern_new_reviewer'] = (df['reviewer_count'] <= 2).astype(int)
+    df['pattern_same_day'] = (df['same_day_count'] > 5).astype(int)
 
-    # Text quality
-    df = extract_text_quality_features(df, text_column="text_preprocessed")
+    # text quality
+    print("  Adding text quality features...")
+    try:
+        df = extract_text_quality_features(df, text_column='text_preprocessed')
+    except Exception as e:
+        print(f"  Warning: text quality features failed: {e}")
+        # fallback: create dummy features
+        tq_features = get_text_quality_feature_names()
+        for feat in tq_features:
+            if feat not in df.columns:
+                df[feat] = 0.0
 
-    print("[FEATURES] completed.")
+    print("  [OK] Features extracted")
     return df
 
 # ========================================================
@@ -426,6 +514,36 @@ def predict_csv(input_csv, output_csv, model_path):
     print(f"\n[2] Loading dataset: {input_csv}")
     df = pd.read_csv(input_csv, low_memory=False)
     print(f"  Total rows: {len(df)}")
+
+    # Handle text preprocessing
+    if 'text_preprocessed' not in df.columns:
+        print("\n  ⚠ Kolom 'text_preprocessed' tidak ditemukan.")
+
+        # Cari kolom text yang tersedia
+        if 'text' in df.columns:
+            text_col = 'text'
+        elif 'textTranslated' in df.columns:
+            text_col = 'textTranslated'
+        else:
+            raise ValueError("Tidak ditemukan kolom 'text' atau 'textTranslated' di dataset!")
+
+        print(f"  → Menggunakan kolom '{text_col}' dan melakukan preprocessing...")
+        print("     (Case folding → Cleansing → Normalisasi → Stopword removal → Stemming)")
+
+        # Lakukan preprocessing
+        df['text_preprocessed'] = df[text_col].apply(preprocess_text)
+        print("  [OK] Preprocessing selesai!")
+
+    # Cek kolom yang diperlukan
+    required_cols = ['text_preprocessed', 'stars', 'reviewerNumberOfReviews',
+                     'reviewImageUrls', 'isLocalGuide', 'publishedAtDate', 'reviewDetailedRating']
+
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        print(f"\n⚠ Kolom yang hilang: {missing_cols}")
+        print("  Akan menggunakan nilai default untuk kolom yang hilang")
+        for col in missing_cols:
+            df[col] = np.nan
 
     # Preprocessing + feature engineering
     print("\n[3] Extracting features...")
@@ -512,6 +630,13 @@ def predict_csv(input_csv, output_csv, model_path):
 
     # Save result
     print(f"\n[Save] Saving result: {output_csv}")
+
+    # Create output directory if not exists
+    output_dir = os.path.dirname(output_csv)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"  [OK] Created directory: {output_dir}")
+
     df.to_csv(output_csv, index=False)
     print("Done!")
 
@@ -547,10 +672,42 @@ def predict_csv(input_csv, output_csv, model_path):
 # ========================================================
 
 def main():
-    # Hardcoded paths - no need for command line arguments
-    input_csv = r"E:\Machine_Learning\Projek Fake Review\projek v2\dataset\tes.csv"
-    output_csv = r"E:\Machine_Learning\Projek Fake Review\projek v2\rf_model_output\tes_predictions.csv"
-    model_path = "rf_model_output/random_forest_model.pkl"
+    import sys
+
+    print("="*80)
+    print("RANDOM FOREST - PREDIKSI FAKE REVIEW")
+    print("="*80)
+
+    # Default paths
+    DEFAULT_INPUT = "../dataset_testing/tes.csv"
+    DEFAULT_OUTPUT = "rf_model_output/hasil_prediksi_rf.csv"
+    DEFAULT_MODEL = "../file_training/rf_model_output/random_forest_model.pkl"
+
+    # Parse command line arguments
+    if len(sys.argv) >= 2:
+        input_csv = sys.argv[1]
+        output_csv = sys.argv[2] if len(sys.argv) >= 3 else input_csv.replace('.csv', '_predicted_rf.csv')
+        model_path = sys.argv[3] if len(sys.argv) >= 4 else DEFAULT_MODEL
+    else:
+        print("\nUsage:")
+        print("  python randomForest_predict.py <input_csv> [output_csv] [model_path]")
+        print("\nMenggunakan default files:")
+        print(f"  Input:  {DEFAULT_INPUT}")
+        print(f"  Output: {DEFAULT_OUTPUT}")
+        print(f"  Model:  {DEFAULT_MODEL}")
+        input_csv = DEFAULT_INPUT
+        output_csv = DEFAULT_OUTPUT
+        model_path = DEFAULT_MODEL
+
+        if not os.path.exists(input_csv):
+            print(f"\n[ERROR] File input tidak ditemukan: {input_csv}")
+            return
+
+    if not os.path.exists(model_path):
+        print(f"\n[ERROR] Model tidak ditemukan: {model_path}")
+        print("Pastikan Anda sudah training model dengan:")
+        print("  python randomForest_train.py")
+        return
 
     predict_csv(input_csv, output_csv, model_path)
 

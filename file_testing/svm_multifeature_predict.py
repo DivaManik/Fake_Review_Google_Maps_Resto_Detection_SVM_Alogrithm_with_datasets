@@ -71,13 +71,13 @@ def preprocess_text(text):
 # === TF-IDF VECTORIZER (sama dengan training)
 # ---------------------------
 
-class TfidfVectorizer:
+class TfidfVectorizerManual:
     """TF-IDF Vectorizer dari scratch"""
 
     def __init__(self, max_features=1000):
         self.max_features = max_features
-        self.vocabulary = {}
-        self.idf_values = {}
+        self.vocab = {}
+        self.idf = {}
 
     def fit(self, documents):
         word_doc_count = Counter()
@@ -94,15 +94,15 @@ class TfidfVectorizer:
                 all_words[word] += 1
 
         most_common_words = all_words.most_common(self.max_features)
-        self.vocabulary = {word: idx for idx, (word, _) in enumerate(most_common_words)}
+        self.vocab = {word: idx for idx, (word, _) in enumerate(most_common_words)}
 
         n_documents = len(documents)
-        for word in self.vocabulary:
-            self.idf_values[word] = np.log(n_documents / (word_doc_count[word] + 1))
+        for word in self.vocab:
+            self.idf[word] = np.log(n_documents / (word_doc_count[word] + 1))
 
     def transform(self, documents):
         n_documents = len(documents)
-        n_features = len(self.vocabulary)
+        n_features = len(self.vocab)
         tfidf_matrix = np.zeros((n_documents, n_features))
 
         for doc_idx, doc in enumerate(documents):
@@ -114,10 +114,10 @@ class TfidfVectorizer:
                 continue
 
             for word, count in word_count.items():
-                if word in self.vocabulary:
-                    word_idx = self.vocabulary[word]
+                if word in self.vocab:
+                    word_idx = self.vocab[word]
                     tf = count / total_words
-                    tfidf_matrix[doc_idx, word_idx] = tf * self.idf_values[word]
+                    tfidf_matrix[doc_idx, word_idx] = tf * self.idf[word]
 
         return tfidf_matrix
 
@@ -171,72 +171,146 @@ class LinearSVM:
 
 
 # ---------------------------
+# === STANDARD SCALER (sama dengan training)
+# ---------------------------
+
+class StandardScalerSimple:
+    def __init__(self):
+        self.mean_ = None
+        self.scale_ = None
+
+    def fit(self, X):
+        self.mean_ = np.mean(X, axis=0)
+        self.scale_ = np.std(X, axis=0)
+        self.scale_[self.scale_ == 0] = 1.0
+
+    def transform(self, X):
+        return (X - self.mean_) / self.scale_
+
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
+
+
+# ---------------------------
+# === HELPER FUNCTIONS
+# ---------------------------
+
+def parse_image_field(x):
+    """Parse reviewImageUrls field (robust parser)"""
+    if pd.isna(x):
+        return []
+    if isinstance(x, (list, tuple)):
+        raw = list(x)
+    else:
+        s = str(x).strip()
+        try:
+            import json
+            parsed = json.loads(s)
+            if isinstance(parsed, (list, tuple)):
+                raw = parsed
+            else:
+                raw = [parsed]
+        except Exception:
+            try:
+                import ast
+                parsed = ast.literal_eval(s)
+                if isinstance(parsed, (list, tuple)):
+                    raw = list(parsed)
+                else:
+                    raw = [parsed]
+            except Exception:
+                if ',' in s and not s.startswith('http'):
+                    raw = [p.strip() for p in s.split(',') if p.strip()!='']
+                elif ';' in s:
+                    raw = [p.strip() for p in s.split(';') if p.strip()!='']
+                elif '|' in s:
+                    raw = [p.strip() for p in s.split('|') if p.strip()!='']
+                else:
+                    if s.lower() in ('', 'nan', 'none', '[]'):
+                        raw = []
+                    else:
+                        raw = [s]
+    clean = []
+    for item in raw:
+        if item is None: continue
+        t = str(item).strip()
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1].strip()
+        if t == '' or t.lower() in ('nan','none','null'): continue
+        clean.append(t)
+    return clean
+
+
+# ---------------------------
 # === FEATURE ENGINEERING (sama dengan training)
 # ---------------------------
 
 def extract_features(df):
-    """Extract semua fitur penting untuk deteksi fake review"""
-
+    """Extract semua fitur untuk prediksi (SAMA PERSIS dengan training script)"""
     print("  Extracting features...")
 
-    # 1. Text length
-    df['text_length'] = df['text_preprocessed'].fillna('').apply(lambda x: len(str(x).split()))
+    # basic text features
+    df['text_word_count'] = df['text_preprocessed'].apply(lambda x: len(str(x).split()))
+    df['text_char_count'] = df['text_preprocessed'].apply(lambda x: len(str(x)))
+    df['avg_word_length'] = df['text_preprocessed'].apply(lambda x: np.mean([len(w) for w in str(x).split()]) if len(str(x).split())>0 else 0.0)
+    df['exclamation_count'] = df['text_preprocessed'].str.count('!').fillna(0).astype(int)
+    df['question_count'] = df['text_preprocessed'].str.count(r'\?').fillna(0).astype(int)
+    df['punctuation_count'] = df['text_preprocessed'].str.count(r'[.,;:!?"\'()\\-]').fillna(0).astype(int)
+    df['uppercase_word_count'] = df['text_preprocessed'].apply(lambda s: sum(1 for w in str(s).split() if w.isupper()))
+    df['uppercase_word_ratio'] = df['uppercase_word_count'] / df['text_word_count'].replace(0,1)
 
-    # 2. Stars (normalize to 0-1)
-    df['stars_norm'] = df['stars'].fillna(0) / 5.0
-
-    # 3. Has image
-    df['has_image'] = df['reviewImageUrls'].apply(
-        lambda x: 0 if pd.isna(x) or str(x).strip() == '' or str(x).lower() == 'nan' else 1
-    )
-
-    # 4. Reviewer number of reviews (normalize dengan log)
-    df['reviewer_count'] = df['reviewerNumberOfReviews'].fillna(0)
+    # stars & reviewer
+    df['stars'] = df['stars'].fillna(0).astype(float)
+    df['stars_norm'] = df['stars'] / 5.0
+    df['reviewer_count'] = pd.to_numeric(df['reviewerNumberOfReviews'], errors='coerce').fillna(0).astype(float)
     df['reviewer_count_log'] = np.log1p(df['reviewer_count'])
+    df['is_local_guide'] = df['isLocalGuide'].apply(lambda x: 1 if str(x).lower() in ('1','true','yes') else 0)
 
-    # 5. Is local guide
-    df['is_local_guide'] = df['isLocalGuide'].apply(
-        lambda x: 1 if str(x).lower() in ['true', '1', 'yes'] else 0
-    )
+    # images (using robust parser)
+    print("  Parsing reviewImageUrls ...")
+    df['review_images_list'] = df['reviewImageUrls'].apply(parse_image_field)
+    df['n_images'] = df['review_images_list'].apply(lambda lst: len(lst))
+    df['has_image'] = (df['n_images'] > 0).astype(int)
 
-    # 6. Detail rating all 5s
+    # detail rating all 5
     def check_all_fives(x):
-        if pd.isna(x) or str(x).strip() == '':
-            return 0
         try:
-            numbers = [float(s) for s in str(x).replace(',', ' ').split() if s.replace('.','').isdigit()]
-            if len(numbers) > 0:
-                return 1 if all(n == 5.0 for n in numbers) else 0
+            nums = [float(s) for s in str(x).replace(',', ' ').split() if s.replace('.','').isdigit()]
+            return 1 if (len(nums)>0 and all(n==5.0 for n in nums)) else 0
         except:
-            pass
-        return 0
-
+            return 0
     df['detail_rating_all_5'] = df['reviewDetailedRating'].apply(check_all_fives)
 
-    # 7. Published date - time patterns
+    # published date
     df['published_date'] = pd.to_datetime(df['publishedAtDate'], errors='coerce')
     df['publish_hour'] = df['published_date'].dt.hour.fillna(0).astype(int)
     df['publish_day'] = df['published_date'].dt.date
-
-    # 8. Same day review count
     if df['publish_day'].notna().sum() > 0:
         day_counts = df.groupby('publish_day').size()
         df['same_day_count'] = df['publish_day'].map(day_counts).fillna(1).astype(int)
     else:
         df['same_day_count'] = 1
 
-    # 9. Suspicious patterns
-    df['pattern_5star_short'] = ((df['stars'] == 5) & (df['text_length'] < 5)).astype(int)
+    # patterns
+    df['pattern_5star_short'] = ((df['stars'] == 5) & (df['text_word_count'] < 5)).astype(int)
     df['pattern_5star_nophoto'] = ((df['stars'] == 5) & (df['has_image'] == 0)).astype(int)
     df['pattern_new_reviewer'] = (df['reviewer_count'] <= 2).astype(int)
     df['pattern_same_day'] = (df['same_day_count'] > 5).astype(int)
 
-    # 10. Text Quality Features (Gibberish Detection)
-    print("  [NEW] Adding text quality features...")
-    df = extract_text_quality_features(df, text_column='text_preprocessed')
+    # text quality
+    print("  Adding text quality features...")
+    try:
+        df = extract_text_quality_features(df, text_column='text_preprocessed')
+    except Exception as e:
+        print(f"  Warning: text quality features failed: {e}")
+        # fallback: create dummy features
+        tq_features = get_text_quality_feature_names()
+        for feat in tq_features:
+            if feat not in df.columns:
+                df[feat] = 0.0
 
     print("  [OK] Features extracted")
-
     return df
 
 
@@ -244,7 +318,7 @@ def extract_features(df):
 # === LOAD MODEL
 # ---------------------------
 
-def load_model(model_path="model_output/svm_multifeature_model.pkl"):
+def load_model(model_path="../file_training/svm_model_output/svm_multifeature_model_unified.pkl"):
     """Load trained SVM model"""
     print(f"Loading model dari: {model_path}")
 
@@ -256,7 +330,7 @@ def load_model(model_path="model_output/svm_multifeature_model.pkl"):
 
     print("[OK] Model berhasil dimuat!")
     print(f"\nModel Info:")
-    print(f"  TF-IDF features: {model_data['hyperparameters']['max_features_tfidf']}")
+    print(f"  TF-IDF features: {model_data['max_features_tfidf']}")
     print(f"  Numeric features: {len(model_data['numeric_features'])}")
     print(f"\nTest Set Performance:")
     test_metrics = model_data['test_metrics']
@@ -349,11 +423,15 @@ def predict_csv(input_csv, output_csv, model_data):
     X_numeric = df_valid[numeric_features].fillna(0).values
 
     # TF-IDF
-    vectorizer = model_data['vectorizer']
-    X_tfidf = vectorizer.transform(X_text)
+    tfidf = model_data['tfidf']
+    X_tfidf = tfidf.transform(X_text)
+
+    # Standardize numeric features using saved scaler
+    scaler = model_data['scaler']
+    X_numeric_scaled = scaler.transform(X_numeric)
 
     # Combine features
-    X = np.hstack([X_tfidf, X_numeric])
+    X = np.hstack([X_tfidf, X_numeric_scaled])
 
     print(f"  Feature shape: {X.shape}")
 
@@ -366,8 +444,8 @@ def predict_csv(input_csv, output_csv, model_data):
     y_pred = svm.predict(X)
     decision_scores = svm.decision_function(X)
 
-    # Convert ke label string
-    label_mapping_inv = {v: k for k, v in model_data['label_mapping'].items()}
+    # Convert ke label string (mapping: 1 -> 'FAKE', -1 -> 'REAL')
+    label_mapping_inv = {1: 'FAKE', -1: 'REAL'}
     predicted_labels = [label_mapping_inv[pred] for pred in y_pred]
 
     # Hitung confidence
@@ -398,11 +476,11 @@ def predict_csv(input_csv, output_csv, model_data):
     else:
         print(f"    No reviews with high gibberish score found")
 
-    # Handle data invalid (set sebagai unknown)
+    # Handle data invalid (text kosong = FAKE)
     if len(df_invalid) > 0:
-        df_invalid['predicted_label'] = 'UNKNOWN'
-        df_invalid['confidence'] = 0.0
-        df_invalid['decision_score'] = 0.0
+        df_invalid['predicted_label'] = 'FAKE'
+        df_invalid['confidence'] = 1.0  # High confidence karena jelas empty text
+        df_invalid['decision_score'] = -1.0  # Negative score for FAKE
 
     # Combine kembali
     df_result = pd.concat([df_valid, df_invalid]).sort_index()
@@ -421,6 +499,13 @@ def predict_csv(input_csv, output_csv, model_data):
 
     # Simpan hasil
     print(f"\n[Save] Menyimpan hasil ke: {output_csv}")
+
+    # Create output directory if not exists
+    output_dir = os.path.dirname(output_csv)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"  [OK] Created directory: {output_dir}")
+
     df_result.to_csv(output_csv, index=False)
     print(f"  [OK] Hasil disimpan!")
 
@@ -468,30 +553,30 @@ def main():
     print("SVM MULTI-FEATURE - PREDIKSI FAKE REVIEW")
     print("="*80)
 
-    # Cek arguments
+    # Default paths
+    DEFAULT_INPUT = "../dataset_testing/tes.csv"
+    DEFAULT_OUTPUT = "svm_model_output/hasil_prediksi_svm.csv"
+
+    # Parse command line arguments
     if len(sys.argv) < 2:
         print("\nUsage:")
         print("  python svm_multifeature_predict.py <input_csv> [output_csv]")
         print("\nContoh:")
         print("  python svm_multifeature_predict.py data_baru.csv hasil_prediksi.csv")
-        print("\nAtau edit script ini dan set INPUT_CSV & OUTPUT_CSV di bagian konfigurasi")
-        print("\n" + "="*80)
+        print("\nMenggunakan default files:")
+        print(f"  Input:  {DEFAULT_INPUT}")
+        print(f"  Output: {DEFAULT_OUTPUT}")
+        print("=" * 80)
 
-        # Default files (untuk testing)
-        ini_input = input("Masukan Nama File input csv")
-        INPUT_CSV = ini_input
-        OUTPUT_CSV = "model_output/hasil_prediksi.csv"
-
-        print(f"\nMenggunakan default files:")
-        print(f"  Input:  {INPUT_CSV}")
-        print(f"  Output: {OUTPUT_CSV}")
+        INPUT_CSV = DEFAULT_INPUT
+        OUTPUT_CSV = DEFAULT_OUTPUT
 
         if not os.path.exists(INPUT_CSV):
             print(f"\n[ERROR] File input tidak ditemukan: {INPUT_CSV}")
             return
     else:
         INPUT_CSV = sys.argv[1]
-        OUTPUT_CSV = sys.argv[2] if len(sys.argv) > 2 else INPUT_CSV.replace('.csv', '_predicted.csv')
+        OUTPUT_CSV = sys.argv[2] if len(sys.argv) > 2 else INPUT_CSV.replace('.csv', '_predicted_svm.csv')
 
     # Load model
     try:

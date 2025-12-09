@@ -1,295 +1,245 @@
+#!/usr/bin/env python3
+# svm_multifeature_unified.py
 """
-Training SVM OPTIMAL untuk deteksi fake review
-Gabungan fitur terbaik:
-- Preprocessing: Sastrawi (stemming + stopword) + normalisasi singkatan
-- TF-IDF: N-grams (1-2) dengan min_df
-- SVM: Vectorized batch training + early stopping
-- StandardScaler untuk normalisasi fitur numerik
-- Numeric features lengkap (17+ fitur)
-- Text quality features (gibberish detection)
-- Visualisasi lengkap
+SVM training script adjusted to use the same feature set as NB & RF:
+- header normalization & auto-mapping
+- Sastrawi preprocessing (optional, fallback)
+- robust reviewImageUrls parsing
+- TF-IDF manual (unigram) max_features=1000 (same as NB/RF)
+- numeric/pattern features identical to NB/RF
+- StandardScaler for numeric features
+- text quality features (imported if available)
+- linear SVM (vectorized) with early stopping
 """
 
 import os
 import sys
+import re
+import json
+import ast
+import math
+import pickle
+from collections import Counter, defaultdict
+from typing import List, Optional
+
 import numpy as np
 import pandas as pd
-import pickle
-import re
-from collections import Counter
-from datetime import datetime
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
+# Ensure parent dir can be used for imports if needed
+# sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ---------------------------
-# === SASTRAWI PREPROCESSING
+# Header normalization & auto-mapping
 # ---------------------------
+from difflib import get_close_matches
 
+def normalize_and_map_columns(df: pd.DataFrame):
+    df = df.copy()
+    # normalize columns: strip and remove BOM
+    new_cols = []
+    for c in df.columns:
+        if isinstance(c, str):
+            c2 = c.replace('\ufeff', '').strip()
+        else:
+            c2 = str(c).strip()
+        new_cols.append(c2)
+    df.columns = new_cols
+
+    cols_lower = [c.lower() for c in df.columns]
+    expected = {
+        'reviewImageUrls': ['image', 'images', 'reviewimage', 'reviewimageurls', 'review_image_urls', 'image_urls', 'imageurl'],
+        'reviewDetailedRating': ['detailed', 'detailedrating', 'reviewdetailedrating', 'review_detailed_rating','detailrating'],
+        'publishedAtDate': ['published', 'publishedatdate', 'published_date', 'publishdate', 'date','createdat'],
+        'reviewerNumberOfReviews': ['reviewernumberofreviews','reviewer_count','reviewer_number_of_reviews','num_reviews','review_count'],
+        'isLocalGuide': ['islocalguide','is_local_guide','localguide'],
+        'text': ['text','review','content','texttranslated','text_translated','review_text','reviewtext'],
+        'stars': ['stars','rating','rating_score','star']
+    }
+
+    mapping = {}
+    for expected_name, keywords in expected.items():
+        found = None
+        # exact match
+        for c in df.columns:
+            if c.strip().lower() == expected_name.lower():
+                found = c; break
+        if not found:
+            # contains keyword
+            for kw in keywords:
+                for c in df.columns:
+                    if kw in c.lower():
+                        found = c; break
+                if found: break
+        if not found:
+            # close match by difflib
+            cm = get_close_matches(expected_name.lower(), cols_lower, n=1, cutoff=0.8)
+            if cm:
+                idx = cols_lower.index(cm[0])
+                found = df.columns[idx]
+        if found:
+            mapping[found] = expected_name
+
+    if mapping:
+        df = df.rename(columns=mapping)
+
+    return df, mapping
+
+# ---------------------------
+# Sastrawi (preprocessing Indonesian)
+# ---------------------------
 try:
     from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
     from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
     stemmer = StemmerFactory().create_stemmer()
     stopword_remover = StopWordRemoverFactory().create_stop_word_remover()
     HAS_SASTRAWI = True
-    print("[OK] Sastrawi loaded successfully")
-except Exception as e:
-    print(f"[WARNING] Sastrawi not available: {e}")
-    print("  Install via: pip install Sastrawi")
+except Exception:
     HAS_SASTRAWI = False
-    class DummyStemmer:
-        def stem(self, text):
-            return text
-    class DummyStopwordRemover:
-        def remove(self, text):
-            return text
-    stemmer = DummyStemmer()
-    stopword_remover = DummyStopwordRemover()
+    class Dummy:
+        def remove(self, x): return x
+        def stem(self, x): return x
+    stopword_remover = Dummy()
+    stemmer = Dummy()
 
-# Normalisasi singkatan Indonesia
 NORMALIZATION_DICT = {
     'gak': 'tidak', 'ga': 'tidak', 'ngga': 'tidak', 'nggak': 'tidak', 'gk': 'tidak',
-    'tdk': 'tidak', 'bgt': 'banget', 'bgd': 'banget', 'bngt': 'banget', 'emg': 'memang',
+    'tdk': 'tidak', 'bgt': 'banget', 'bngt': 'banget', 'emg': 'memang',
     'udh': 'sudah', 'udah': 'sudah', 'blm': 'belum', 'jg': 'juga', 'dgn': 'dengan',
     'yg': 'yang', 'utk': 'untuk', 'sy': 'saya', 'kl': 'kalau', 'klo': 'kalau',
-    'thx': 'terima kasih', 'thanks': 'terima kasih', 'makasih': 'terima kasih',
-    'mantul': 'mantap', 'mantep': 'mantap', 'mntap': 'mantap',
+    'thx': 'terima kasih', 'thanks': 'terima kasih', 'mantul': 'mantap', 'mantep': 'mantap',
     'rekomend': 'rekomendasi', 'rekomen': 'rekomendasi', 'recommended': 'rekomendasi',
-    'bsk': 'besok', 'skrg': 'sekarang', 'skg': 'sekarang', 'hrs': 'harus',
-    'org': 'orang', 'org2': 'orang orang', 'sm': 'sama', 'dr': 'dari',
-    'krn': 'karena', 'karna': 'karena', 'soalnya': 'karena', 'tp': 'tapi',
-    'bkn': 'bukan', 'lg': 'lagi', 'aja': 'saja', 'aj': 'saja', 'doang': 'saja',
-    'bisa': 'dapat', 'bs': 'dapat', 'gmn': 'bagaimana', 'gimana': 'bagaimana',
-    'knp': 'kenapa', 'dmn': 'dimana', 'kmn': 'kemana', 'gt': 'gitu', 'gtu': 'gitu',
-    'spy': 'supaya', 'biar': 'supaya', 'pdhl': 'padahal', 'sbnrnya': 'sebenarnya',
-    'emang': 'memang', 'emg': 'memang', 'mmg': 'memang',
-    'pesen': 'pesan', 'nyoba': 'coba', 'cobain': 'coba',
-    'enk': 'enak', 'uenak': 'enak', 'ena': 'enak',
-    'bgs': 'bagus', 'baguslah': 'bagus', 'top': 'bagus', 'ok': 'bagus', 'oke': 'bagus',
-    'jelek': 'buruk', 'jlk': 'buruk', 'ancur': 'buruk', 'parah': 'buruk',
-    'lmyn': 'lumayan', 'lmayan': 'lumayan',
-    'dtg': 'datang', 'plg': 'pulang', 'msk': 'masuk',
 }
 
-
 def preprocess_text_full(text):
-    """
-    Preprocessing lengkap untuk text Indonesia:
-    1. Lowercase (case folding)
-    2. Remove URLs, mentions, hashtags
-    3. Remove special characters & numbers
-    4. Normalisasi singkatan
-    5. Remove stopwords (Sastrawi)
-    6. Stemming (Sastrawi)
-    """
-    if pd.isna(text) or str(text).strip() == '':
+    if pd.isna(text):
         return ''
-
     s = str(text).lower()
-
-    # Remove URLs
     s = re.sub(r'http\S+|www\S+|https\S+', '', s)
-    # Remove mentions & hashtags
     s = re.sub(r'@\w+', '', s)
     s = re.sub(r'#\w+', '', s)
-    # Remove special characters (keep spaces)
     s = re.sub(r'[^\w\s]', ' ', s)
-    # Remove numbers
     s = re.sub(r'\d+', ' ', s)
-    # Remove extra whitespace
     s = re.sub(r'\s+', ' ', s).strip()
-
-    # Normalisasi singkatan
     words = s.split()
     words = [NORMALIZATION_DICT.get(w, w) for w in words]
     s = ' '.join(words)
-
-    # Stopword removal
     if HAS_SASTRAWI:
         s = stopword_remover.remove(s)
-
-    # Stemming
-    if HAS_SASTRAWI:
         s = stemmer.stem(s)
-
     return s
 
-
 # ---------------------------
-# === FEATURE ENGINEERING
+# Robust image field parser
 # ---------------------------
-
-def extract_features(df):
-    """
-    Extract features lengkap untuk deteksi fake review
-    """
-    print("\n[Feature Engineering] Extracting features...")
-
-    # Basic text-derived features
-    df['text_preprocessed'] = df['text_preprocessed'].fillna('').astype(str)
-    df['text_word_count'] = df['text_preprocessed'].apply(lambda x: len(x.split()))
-    df['text_char_count'] = df['text_preprocessed'].apply(lambda x: len(x))
-    df['avg_word_length'] = df['text_preprocessed'].apply(
-        lambda x: np.mean([len(w) for w in x.split()]) if len(x.split()) > 0 else 0
-    )
-
-    # Punctuation/exclamation/question counts (dari teks asli jika ada)
-    if 'text' in df.columns:
-        text_col = df['text'].fillna('')
+def parse_image_field(x):
+    if pd.isna(x):
+        return []
+    if isinstance(x, (list, tuple)):
+        raw = list(x)
     else:
-        text_col = df['text_preprocessed']
-
-    df['exclamation_count'] = text_col.str.count('!')
-    df['question_count'] = text_col.str.count(r'\?')
-    df['punctuation_count'] = text_col.str.count(r'[.,;:!?"\'()\-]')
-    df['uppercase_word_count'] = text_col.apply(lambda s: sum(1 for w in str(s).split() if w.isupper()))
-    df['uppercase_word_ratio'] = df['uppercase_word_count'] / df['text_word_count'].replace(0, 1)
-
-    # Stars normalized
-    df['stars_norm'] = df['stars'].fillna(0) / 5.0
-
-    # Has image
-    df['has_image'] = df['reviewImageUrls'].apply(
-        lambda x: 0 if pd.isna(x) or str(x).strip() == '' or str(x).lower() == 'nan' else 1
-    )
-
-    # Reviewer count log
-    df['reviewer_count'] = df['reviewerNumberOfReviews'].fillna(0).astype(float)
-    df['reviewer_count_log'] = np.log1p(df['reviewer_count'])
-
-    # Is local guide
-    df['is_local_guide'] = df['isLocalGuide'].apply(
-        lambda x: 1 if str(x).lower() in ['true', '1', 'yes'] else 0
-    )
-
-    # Detail rating all 5s
-    def check_all_fives(x):
-        if pd.isna(x) or str(x).strip() == '':
-            return 0
+        s = str(x).strip()
         try:
-            numbers = [float(s) for s in str(x).replace(',', ' ').split() if s.replace('.', '').isdigit()]
-            if len(numbers) > 0:
-                return 1 if all(n == 5.0 for n in numbers) else 0
-        except:
-            pass
-        return 0
-
-    df['detail_rating_all_5'] = df['reviewDetailedRating'].apply(check_all_fives)
-
-    # Published date features
-    df['published_date'] = pd.to_datetime(df['publishedAtDate'], errors='coerce')
-    df['publish_hour'] = df['published_date'].dt.hour.fillna(0).astype(int)
-    df['publish_day'] = df['published_date'].dt.date
-
-    if df['publish_day'].notna().sum() > 0:
-        day_counts = df.groupby('publish_day').size()
-        df['same_day_count'] = df['publish_day'].map(day_counts).fillna(1).astype(int)
-    else:
-        df['same_day_count'] = 1
-
-    # Suspicious patterns
-    df['pattern_5star_short'] = ((df['stars'] == 5) & (df['text_word_count'] < 5)).astype(int)
-    df['pattern_5star_nophoto'] = ((df['stars'] == 5) & (df['has_image'] == 0)).astype(int)
-    df['pattern_new_reviewer'] = (df['reviewer_count'] <= 2).astype(int)
-    df['pattern_same_day'] = (df['same_day_count'] > 5).astype(int)
-
-    # Text quality features (gibberish detection)
-    print("  Adding text quality features (gibberish detection)...")
-    df = extract_text_quality_features(df, text_column='text_preprocessed')
-
-    print("  [OK] Features extracted")
-    return df
-
-
-# ---------------------------
-# === TF-IDF VECTORIZER (dengan N-grams)
-# ---------------------------
-
-class TfidfVectorizer:
-    """TF-IDF vectorizer dengan ngram_range dan min_df"""
-
-    def __init__(self, max_features=2000, ngram_range=(1, 2), min_df=2, smooth_idf=True):
-        self.max_features = max_features
-        self.ngram_range = ngram_range
-        self.min_df = min_df
-        self.vocabulary = {}
-        self.idf_values = {}
-        self.smooth_idf = smooth_idf
-
-    def _generate_ngrams(self, tokens):
-        min_n, max_n = self.ngram_range
-        ngrams = []
-        L = len(tokens)
-        for n in range(min_n, max_n + 1):
-            for i in range(L - n + 1):
-                ngrams.append(' '.join(tokens[i:i + n]))
-        return ngrams
-
-    def fit(self, documents):
-        doc_count = Counter()
-        term_freq = Counter()
-        total_docs = 0
-
-        for doc in documents:
-            total_docs += 1
-            tokens = str(doc).split()
-            ngrams = set(self._generate_ngrams(tokens))
-            for ng in ngrams:
-                doc_count[ng] += 1
-            for ng in self._generate_ngrams(tokens):
-                term_freq[ng] += 1
-
-        # Filter by min_df
-        candidates = [(ng, term_freq[ng]) for ng, cnt in doc_count.items() if cnt >= self.min_df]
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        selected = candidates[:self.max_features]
-
-        self.vocabulary = {ng: idx for idx, (ng, _) in enumerate(selected)}
-
-        # Compute IDF
-        for ng in self.vocabulary:
-            df = doc_count.get(ng, 0)
-            if self.smooth_idf:
-                idf = np.log((1 + total_docs) / (1 + df)) + 1.0
+            parsed = json.loads(s)
+            if isinstance(parsed, (list, tuple)):
+                raw = parsed
             else:
-                idf = np.log(total_docs / (df + 1))
-            self.idf_values[ng] = idf
+                raw = [parsed]
+        except Exception:
+            try:
+                parsed = ast.literal_eval(s)
+                if isinstance(parsed, (list, tuple)):
+                    raw = list(parsed)
+                else:
+                    raw = [parsed]
+            except Exception:
+                if ',' in s and not s.startswith('http'):
+                    raw = [p.strip() for p in s.split(',') if p.strip()!='']
+                elif ';' in s:
+                    raw = [p.strip() for p in s.split(';') if p.strip()!='']
+                elif '|' in s:
+                    raw = [p.strip() for p in s.split('|') if p.strip()!='']
+                else:
+                    if s.lower() in ('', 'nan', 'none', '[]'):
+                        raw = []
+                    else:
+                        raw = [s]
+    clean = []
+    for item in raw:
+        if item is None: continue
+        t = str(item).strip()
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1].strip()
+        if t == '' or t.lower() in ('nan','none','null'): continue
+        clean.append(t)
+    return clean
 
-    def transform(self, documents):
-        n_docs = len(documents)
-        n_feats = len(self.vocabulary)
-        X = np.zeros((n_docs, n_feats), dtype=float)
+# ---------------------------
+# Text quality detector (optional)
+# ---------------------------
+try:
+    from file_testing.text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
+    HAS_TQ = True
+except Exception:
+    HAS_TQ = False
+    def extract_text_quality_features(df, text_column='text_preprocessed'):
+        df['tq_entropy'] = 0.0
+        df['tq_valid_word_ratio'] = 0.0
+        df['tq_avg_word_length'] = 0.0
+        return df
+    def get_text_quality_feature_names():
+        return ['tq_entropy','tq_valid_word_ratio','tq_avg_word_length']
 
+# ---------------------------
+# TF-IDF Vectorizer Manual (unigram to match NB/RF)
+# ---------------------------
+class TfidfVectorizerManual:
+    def __init__(self, max_features=1000):
+        self.max_features = max_features
+        self.vocab = {}
+        self.idf = {}
+
+    def fit(self, documents: List[str]):
+        word_doc_count = Counter()
+        all_words = Counter()
+        for doc in documents:
+            words = str(doc).split()
+            unique = set(words)
+            for w in unique:
+                word_doc_count[w] += 1
+            for w in words:
+                all_words[w] += 1
+        most_common = all_words.most_common(self.max_features)
+        self.vocab = {w: i for i, (w, _) in enumerate(most_common)}
+        N = len(documents)
+        for w in self.vocab:
+            self.idf[w] = math.log((N) / (word_doc_count[w] + 1))
+
+    def transform(self, documents: List[str]):
+        X = np.zeros((len(documents), len(self.vocab)), dtype=float)
         for i, doc in enumerate(documents):
-            tokens = str(doc).split()
-            ngrams = self._generate_ngrams(tokens)
-            if len(ngrams) == 0:
+            words = str(doc).split()
+            wc = Counter(words)
+            total = len(words)
+            if total == 0:
                 continue
-            counts = Counter(ngrams)
-            total = sum(counts.values())
-            for ng, cnt in counts.items():
-                if ng in self.vocabulary:
-                    idx = self.vocabulary[ng]
-                    tf = cnt / total
-                    X[i, idx] = tf * self.idf_values.get(ng, 0.0)
+            for w, c in wc.items():
+                if w in self.vocab:
+                    idx = self.vocab[w]
+                    tf = c / total
+                    X[i, idx] = tf * self.idf[w]
         return X
 
-    def fit_transform(self, documents):
+    def fit_transform(self, documents: List[str]):
         self.fit(documents)
         return self.transform(documents)
 
-
 # ---------------------------
-# === STANDARD SCALER
+# Standard Scaler for numeric features
 # ---------------------------
-
-class StandardScaler:
-    """Standard scaler untuk normalisasi fitur numerik"""
-
+class StandardScalerSimple:
     def __init__(self):
         self.mean_ = None
         self.scale_ = None
@@ -306,18 +256,128 @@ class StandardScaler:
         self.fit(X)
         return self.transform(X)
 
+# ---------------------------
+# Feature engineering (matching NB & RF)
+# ---------------------------
+def extract_features(df: pd.DataFrame):
+    print("\n[Feature Engineering] Extracting features...")
+    df = df.copy()
+
+    # normalize & map
+    df, mapping = normalize_and_map_columns(df)
+    if mapping:
+        print("[FE] Applied column mapping (actual -> expected):")
+        for k, v in mapping.items():
+            print(f"   {k} -> {v}")
+
+    defaults = {
+        "text_preprocessed": "", "text": "", "stars": 0, "reviewImageUrls": None,
+        "reviewerNumberOfReviews": 0, "isLocalGuide": 0, "reviewDetailedRating": "", "publishedAtDate": pd.NaT
+    }
+    for col, val in defaults.items():
+        if col not in df.columns:
+            df[col] = val
+            print(f"[FE] Warning: created missing column '{col}' with default")
+
+    # If text_preprocessed empty, fallback to preprocessing of 'text'
+    df['text_preprocessed'] = df['text_preprocessed'].fillna('').astype(str)
+    mask_empty = df['text_preprocessed'].str.strip() == ''
+    if mask_empty.any():
+        df.loc[mask_empty, 'text_preprocessed'] = df.loc[mask_empty, 'text'].fillna('').astype(str).apply(preprocess_text_full)
+    # Always run preprocess
+    df['text_preprocessed'] = df['text_preprocessed'].apply(preprocess_text_full)
+
+    # basic text features
+    df['text_word_count'] = df['text_preprocessed'].apply(lambda x: len(str(x).split()))
+    df['text_char_count'] = df['text_preprocessed'].apply(lambda x: len(str(x)))
+    df['avg_word_length'] = df['text_preprocessed'].apply(lambda x: np.mean([len(w) for w in str(x).split()]) if len(str(x).split())>0 else 0.0)
+    df['exclamation_count'] = df['text_preprocessed'].str.count('!').fillna(0).astype(int)
+    df['question_count'] = df['text_preprocessed'].str.count(r'\?').fillna(0).astype(int)
+    df['punctuation_count'] = df['text_preprocessed'].str.count(r'[.,;:!?"\'()\\-]').fillna(0).astype(int)
+    df['uppercase_word_count'] = df['text_preprocessed'].apply(lambda s: sum(1 for w in str(s).split() if w.isupper()))
+    df['uppercase_word_ratio'] = df['uppercase_word_count'] / df['text_word_count'].replace(0,1)
+
+    # stars & reviewer
+    df['stars'] = df['stars'].fillna(0).astype(float)
+    df['stars_norm'] = df['stars'] / 5.0
+    df['reviewer_count'] = pd.to_numeric(df['reviewerNumberOfReviews'], errors='coerce').fillna(0).astype(float)
+    df['reviewer_count_log'] = np.log1p(df['reviewer_count'])
+    df['is_local_guide'] = df['isLocalGuide'].apply(lambda x: 1 if str(x).lower() in ('1','true','yes') else 0)
+
+    # images
+    print("[FE] Parsing reviewImageUrls ...")
+    df['review_images_list'] = df['reviewImageUrls'].apply(parse_image_field)
+    df['n_images'] = df['review_images_list'].apply(lambda lst: len(lst))
+    df['has_image'] = (df['n_images'] > 0).astype(int)
+    df['first_image'] = df['review_images_list'].apply(lambda lst: lst[0] if isinstance(lst, list) and len(lst)>0 else np.nan)
+
+    # detail rating all 5
+    def check_all_fives(x):
+        try:
+            nums = [float(s) for s in str(x).replace(',', ' ').split() if s.replace('.','').isdigit()]
+            return 1 if (len(nums)>0 and all(n==5.0 for n in nums)) else 0
+        except:
+            return 0
+    df['detail_rating_all_5'] = df['reviewDetailedRating'].apply(check_all_fives)
+
+    # published date
+    df['published_date'] = pd.to_datetime(df['publishedAtDate'], errors='coerce')
+    df['publish_hour'] = df['published_date'].dt.hour.fillna(0).astype(int)
+    df['publish_day'] = df['published_date'].dt.date
+    if df['publish_day'].notna().sum() > 0:
+        day_counts = df.groupby('publish_day').size()
+        df['same_day_count'] = df['publish_day'].map(day_counts).fillna(1).astype(int)
+    else:
+        df['same_day_count'] = 1
+
+    # patterns
+    df['pattern_5star_short'] = ((df['stars'] == 5) & (df['text_word_count'] < 5)).astype(int)
+    df['pattern_5star_nophoto'] = ((df['stars'] == 5) & (df['has_image'] == 0)).astype(int)
+    df['pattern_new_reviewer'] = (df['reviewer_count'] <= 2).astype(int)
+    df['pattern_same_day'] = (df['same_day_count'] > 5).astype(int)
+
+    # text quality
+    try:
+        df = extract_text_quality_features(df, text_column='text_preprocessed')
+    except Exception:
+        for n in get_text_quality_feature_names():
+            if n not in df.columns:
+                df[n] = 0.0
+
+    print("[FE] Feature engineering done.")
+    return df
 
 # ---------------------------
-# === LINEAR SVM (Vectorized + Early Stopping)
+# Metrics & plotting helpers
 # ---------------------------
+def calculate_metrics(y_true, y_pred):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    fp = int(np.sum((y_true == -1) & (y_pred == 1)))
+    tn = int(np.sum((y_true == -1) & (y_pred == -1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == -1)))
 
+    total = tp+fp+tn+fn if (tp+fp+tn+fn)>0 else 1
+    accuracy = (tp + tn) / total
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1_score': f1,
+            'confusion_matrix': {'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn}}
+
+def print_confusion_matrix(cm):
+    print("\n  Confusion Matrix:")
+    print("                  Predicted")
+    print("                FAKE    REAL")
+    print(f"  Actual FAKE   {cm['tp']:4d}    {cm['fn']:4d}")
+    print(f"         REAL   {cm['fp']:4d}    {cm['tn']:4d}")
+
+# ---------------------------
+# Linear SVM (vectorized + early stopping)
+# ---------------------------
 class LinearSVM:
-    """
-    Linear SVM dengan hinge loss + L2 regularization
-    - Vectorized batch gradient descent (cepat)
-    - Early stopping untuk mencegah overfitting
-    """
-
     def __init__(self, learning_rate=0.01, lambda_param=0.01, n_iterations=2000,
                  tol=1e-4, early_stopping_rounds=50, verbose=True):
         self.lr = learning_rate
@@ -331,7 +391,6 @@ class LinearSVM:
         self.losses = []
 
     def _hinge_loss_and_grad(self, X, y):
-        """Compute hinge loss and gradient (vectorized)"""
         n = X.shape[0]
         scores = X.dot(self.w) + self.b
         margins = 1 - y * scores
@@ -395,45 +454,9 @@ class LinearSVM:
         scores = self.decision_function(X)
         return np.where(scores >= 0, 1, -1)
 
-
 # ---------------------------
-# === EVALUATION METRICS
+# PCA & visualization helpers (same as before)
 # ---------------------------
-
-def calculate_metrics(y_true, y_pred):
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
-    fp = int(np.sum((y_true == -1) & (y_pred == 1)))
-    tn = int(np.sum((y_true == -1) & (y_pred == -1)))
-    fn = int(np.sum((y_true == 1) & (y_pred == -1)))
-
-    accuracy = (tp + tn) / (tp + fp + tn + fn) if (tp + fp + tn + fn) > 0 else 0.0
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1,
-        'confusion_matrix': {'tp': tp, 'fp': fp, 'tn': tn, 'fn': fn}
-    }
-
-
-def print_confusion_matrix(cm):
-    print("\n  Confusion Matrix:")
-    print("                  Predicted")
-    print("                FAKE    REAL")
-    print(f"  Actual FAKE   {cm['tp']:4d}    {cm['fn']:4d}")
-    print(f"         REAL   {cm['fp']:4d}    {cm['tn']:4d}")
-
-
-# ---------------------------
-# === PCA (untuk visualisasi)
-# ---------------------------
-
 class PCA:
     def __init__(self, n_components=2):
         self.n_components = n_components
@@ -456,11 +479,6 @@ class PCA:
         self.fit(X)
         return self.transform(X)
 
-
-# ---------------------------
-# === VISUALIZATIONS
-# ---------------------------
-
 def plot_hyperplane_2d(X, y, svm, output_dir, filename='hyperplane_visualization.png'):
     print(f"\n[Visualization] Creating hyperplane plot...")
     pca = PCA(n_components=2)
@@ -470,8 +488,8 @@ def plot_hyperplane_2d(X, y, svm, output_dir, filename='hyperplane_visualization
     plt.figure(figsize=(12, 8))
     fake_mask = (y == 1)
     real_mask = (y == -1)
-    plt.scatter(X2[fake_mask, 0], X2[fake_mask, 1], c='red', marker='o', alpha=0.6, s=40, label='FAKE')
-    plt.scatter(X2[real_mask, 0], X2[real_mask, 1], c='blue', marker='s', alpha=0.6, s=40, label='REAL')
+    plt.scatter(X2[fake_mask, 0], X2[fake_mask, 1], marker='o', alpha=0.6, s=40, label='FAKE')
+    plt.scatter(X2[real_mask, 0], X2[real_mask, 1], marker='s', alpha=0.6, s=40, label='REAL')
 
     xlim = plt.gca().get_xlim()
     ylim = plt.gca().get_ylim()
@@ -495,7 +513,6 @@ def plot_hyperplane_2d(X, y, svm, output_dir, filename='hyperplane_visualization
     plt.close()
     print(f"  [OK] Saved: {path}")
 
-
 def plot_loss_curve(losses, output_dir, filename='training_loss_curve.png'):
     print(f"\n[Visualization] Creating loss curve plot...")
     plt.figure(figsize=(10, 6))
@@ -509,7 +526,6 @@ def plot_loss_curve(losses, output_dir, filename='training_loss_curve.png'):
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close()
     print(f"  [OK] Saved: {path}")
-
 
 def plot_confusion_matrix_heatmap(cm, output_dir, filename='confusion_matrix.png'):
     print(f"\n[Visualization] Creating confusion matrix heatmap...")
@@ -540,7 +556,6 @@ def plot_confusion_matrix_heatmap(cm, output_dir, filename='confusion_matrix.png
     plt.close()
     print(f"  [OK] Saved: {path}")
 
-
 def plot_performance_metrics(train_metrics, test_metrics, output_dir, filename='performance_metrics.png'):
     print(f"\n[Visualization] Creating performance metrics comparison...")
 
@@ -554,8 +569,8 @@ def plot_performance_metrics(train_metrics, test_metrics, output_dir, filename='
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    bars1 = ax.bar(x - width/2, train_values, width, label='Training', color='skyblue', edgecolor='navy')
-    bars2 = ax.bar(x + width/2, test_values, width, label='Test', color='lightcoral', edgecolor='darkred')
+    bars1 = ax.bar(x - width/2, train_values, width, label='Training')
+    bars2 = ax.bar(x + width/2, test_values, width, label='Test')
 
     for bars in [bars1, bars2]:
         for bar in bars:
@@ -578,141 +593,80 @@ def plot_performance_metrics(train_metrics, test_metrics, output_dir, filename='
     plt.close()
     print(f"  [OK] Saved: {path}")
 
-
 # ---------------------------
-# === MAIN TRAINING
+# MAIN training pipeline
 # ---------------------------
-
 def main():
     print("=" * 80)
-    print("TRAINING SVM OPTIMAL - FAKE REVIEW DETECTION")
+    print("TRAINING SVM (UNIFIED FEATURES - MATCH NB & RF)")
     print("=" * 80)
-    print("\nFitur:")
-    print("  - Preprocessing: Sastrawi + Normalisasi singkatan")
-    print("  - TF-IDF: N-grams (1-2) dengan min_df")
-    print("  - SVM: Vectorized + Early stopping")
-    print("  - StandardScaler untuk normalisasi")
-    print("  - 17+ numeric features + gibberish detection")
 
-    # KONFIGURASI
-    INPUT_FILE = "../dataset_balance/google_review_balanced_combined.csv"
-    OUTPUT_DIR = "model_output"
+    INPUT_FILE = "../dataset_balance/google_review_balanced_undersampling.csv"
+    OUTPUT_DIR = "svm_model_output"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Hyperparameters
-    MAX_FEATURES_TFIDF = 2000
-    NGRAM_RANGE = (1, 2)
-    MIN_DF = 3
+    # hyperparams (aligned with NB/RF)
+    MAX_FEATURES_TFIDF = 1000   # match NB & RF
+    ALPHA = 1.0
     LEARNING_RATE = 0.01
     LAMBDA_PARAM = 0.01
     N_ITERATIONS = 2000
     TEST_SIZE = 0.2
-    VAL_SIZE = 0.1  # Fraction of training set for early stopping
+    VAL_SIZE = 0.1
     RANDOM_SEED = 42
 
-    # [1/8] LOAD DATA
-    print(f"\n[1/8] Loading dataset: {INPUT_FILE}")
+    print("Loading dataset:", INPUT_FILE)
     df = pd.read_csv(INPUT_FILE, low_memory=False)
-    print(f"  Total rows: {len(df)}")
+    print("Rows:", len(df))
 
-    # Required columns
-    required_cols = ['text_preprocessed', 'label', 'stars', 'reviewerNumberOfReviews',
-                     'reviewImageUrls', 'isLocalGuide', 'publishedAtDate', 'reviewDetailedRating']
-    for col in required_cols:
-        if col not in df.columns:
-            df[col] = np.nan
-
-    # [2/8] PREPROCESSING
-    print(f"\n[2/8] Preprocessing text...")
-    print(f"  Sastrawi available: {HAS_SASTRAWI}")
-
-    # Preprocessing jika perlu
-    if 'text' in df.columns:
-        mask_empty = (df['text_preprocessed'].isna()) | (df['text_preprocessed'].str.strip() == '')
-        if mask_empty.sum() > 0:
-            print(f"  Preprocessing {mask_empty.sum()} rows from 'text' column...")
-            df.loc[mask_empty, 'text_preprocessed'] = df.loc[mask_empty, 'text'].apply(preprocess_text_full)
-
-    # Apply full preprocessing untuk konsistensi
-    print(f"  Applying full preprocessing...")
-    df['text_preprocessed'] = df['text_preprocessed'].fillna('').apply(preprocess_text_full)
-
-    # Filter empty
-    df = df[df['text_preprocessed'].notna()]
-    df = df[df['text_preprocessed'].str.strip() != '']
-    print(f"  [OK] Valid rows: {len(df)}")
-
-    # Label distribution
-    print(f"\n  Label distribution:")
-    for label, count in df['label'].value_counts().items():
-        print(f"    - {label}: {count} ({count/len(df)*100:.1f}%)")
-
-    # [3/8] FEATURE ENGINEERING
-    print(f"\n[3/8] Feature Engineering")
+    # feature engineering (this adds all unified numeric/features)
     df = extract_features(df)
 
-    # [4/8] SPLIT DATA
-    print(f"\n[4/8] Splitting data (train: 80%, test: 20%)")
-    np.random.seed(RANDOM_SEED)
-    df = df.sample(frac=1, random_state=RANDOM_SEED).reset_index(drop=True)
+    # TF-IDF (unigram manual)
+    texts = df['text_preprocessed'].fillna('').astype(str).tolist()
+    tfidf = TfidfVectorizerManual(max_features=MAX_FEATURES_TFIDF)
+    print("Fitting TF-IDF (unigram, max_features=%d) ..." % MAX_FEATURES_TFIDF)
+    X_text = tfidf.fit_transform(texts)
 
-    split_idx = int(len(df) * (1 - TEST_SIZE))
-    df_train = df[:split_idx].reset_index(drop=True)
-    df_test = df[split_idx:].reset_index(drop=True)
-
-    print(f"  Training: {len(df_train)} rows")
-    print(f"  Testing:  {len(df_test)} rows")
-
-    # [5/8] PREPARE FEATURES
-    print(f"\n[5/8] Preparing features...")
-
-    # Define numeric features
+    # numeric features exactly matching RF & NB scripts
     text_quality_features = get_text_quality_feature_names()
     numeric_features = [
-        'text_word_count', 'text_char_count', 'avg_word_length',
-        'exclamation_count', 'question_count', 'punctuation_count', 'uppercase_word_ratio',
-        'stars_norm', 'has_image', 'reviewer_count_log', 'is_local_guide',
-        'detail_rating_all_5', 'same_day_count',
-        'pattern_5star_short', 'pattern_5star_nophoto', 'pattern_new_reviewer', 'pattern_same_day'
+        'text_word_count','text_char_count','avg_word_length',
+        'exclamation_count','question_count','punctuation_count','uppercase_word_ratio',
+        'stars_norm','has_image','n_images','reviewer_count_log','is_local_guide',
+        'detail_rating_all_5','same_day_count',
+        'pattern_5star_short','pattern_5star_nophoto','pattern_new_reviewer','pattern_same_day'
     ] + text_quality_features
 
-    # Ensure all features exist
+    # ensure numeric columns exist
     for f in numeric_features:
-        if f not in df_train.columns:
-            df_train[f] = 0
-            df_test[f] = 0
+        if f not in df.columns:
+            df[f] = 0.0
 
-    print(f"\n  Numeric features ({len(numeric_features)}):")
-    for f in numeric_features:
-        print(f"    - {f}")
+    X_num = df[numeric_features].fillna(0).values.astype(float)
 
-    # TF-IDF vectorization
-    print(f"\n  TF-IDF (n-grams={NGRAM_RANGE}, max_features={MAX_FEATURES_TFIDF}, min_df={MIN_DF})")
-    tfidf = TfidfVectorizer(max_features=MAX_FEATURES_TFIDF, ngram_range=NGRAM_RANGE, min_df=MIN_DF)
-    X_train_text = df_train['text_preprocessed'].fillna('').tolist()
-    X_test_text = df_test['text_preprocessed'].fillna('').tolist()
-    X_train_tfidf = tfidf.fit_transform(X_train_text)
-    X_test_tfidf = tfidf.transform(X_test_text)
-    print(f"  TF-IDF features: {X_train_tfidf.shape[1]}")
+    # Standard scale numeric features (important for SVM)
+    scaler = StandardScalerSimple()
+    X_num_scaled = scaler.fit_transform(X_num)
 
-    # Numeric arrays
-    X_train_num = df_train[numeric_features].fillna(0).values.astype(float)
-    X_test_num = df_test[numeric_features].fillna(0).values.astype(float)
+    # Shuffle + split
+    y = df['label'].map({'FAKE':1, 'REAL':-1}).values
+    rng = np.random.RandomState(RANDOM_SEED)
+    perm = rng.permutation(len(X_text))
+    X_text = X_text[perm]
+    X_num_scaled = X_num_scaled[perm]
+    y = y[perm]
 
-    # Scale numeric features
-    scaler = StandardScaler()
-    X_train_num = scaler.fit_transform(X_train_num)
-    X_test_num = scaler.transform(X_test_num)
+    split_idx = int(len(X_text)*(1-TEST_SIZE))
+    X_train_text, X_test_text = X_text[:split_idx], X_text[split_idx:]
+    X_train_num, X_test_num = X_num_scaled[:split_idx], X_num_scaled[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+    print("Train rows:", len(y_train), "Test rows:", len(y_test))
 
-    # Combine features
-    X_train = np.hstack([X_train_tfidf, X_train_num])
-    X_test = np.hstack([X_test_tfidf, X_test_num])
-    print(f"\n  Combined features: X_train={X_train.shape}, X_test={X_test.shape}")
-
-    # Labels
-    label_map = {'FAKE': 1, 'REAL': -1}
-    y_train = df_train['label'].map(label_map).fillna(-1).values.astype(int)
-    y_test = df_test['label'].map(label_map).fillna(-1).values.astype(int)
+    # Combine features for SVM
+    X_train = np.hstack([X_train_text, X_train_num])
+    X_test = np.hstack([X_test_text, X_test_num])
+    print("Combined feature shape:", X_train.shape)
 
     # Validation split for early stopping
     if 0 < VAL_SIZE < 1.0:
@@ -721,108 +675,95 @@ def main():
         y_val = y_train[:val_count]
         X_train_trim = X_train[val_count:]
         y_train_trim = y_train[val_count:]
-        print(f"  Validation split: {val_count} rows for early stopping")
+        print(f"Validation split: {val_count} rows for early stopping")
     else:
         X_val, y_val = None, None
         X_train_trim, y_train_trim = X_train, y_train
 
-    # [6/8] TRAINING
-    print(f"\n[6/8] Training SVM...")
-    print(f"  Learning rate: {LEARNING_RATE}")
-    print(f"  Lambda: {LAMBDA_PARAM}")
-    print(f"  Max iterations: {N_ITERATIONS}")
-    print(f"  Early stopping rounds: 50")
-
-    svm = LinearSVM(
-        learning_rate=LEARNING_RATE,
-        lambda_param=LAMBDA_PARAM,
-        n_iterations=N_ITERATIONS,
-        tol=1e-6,
-        early_stopping_rounds=50,
-        verbose=True
-    )
+    # Train SVM
+    svm = LinearSVM(learning_rate=LEARNING_RATE, lambda_param=LAMBDA_PARAM,
+                    n_iterations=N_ITERATIONS, tol=1e-6, early_stopping_rounds=50, verbose=True)
+    print("Training Linear SVM (vectorized) ...")
     svm.fit(X_train_trim, y_train_trim, X_val=X_val, y_val=y_val)
 
-    # [7/8] EVALUATION
-    print(f"\n[7/8] Evaluating model...")
-
-    print("\n  Training Set:")
+    # Evaluate
+    print("\nTRAIN METRICS:")
     y_train_pred = svm.predict(X_train)
     train_metrics = calculate_metrics(y_train, y_train_pred)
-    print(f"    Accuracy:  {train_metrics['accuracy']:.4f}")
-    print(f"    Precision: {train_metrics['precision']:.4f}")
-    print(f"    Recall:    {train_metrics['recall']:.4f}")
-    print(f"    F1-Score:  {train_metrics['f1_score']:.4f}")
+    print(train_metrics)
     print_confusion_matrix(train_metrics['confusion_matrix'])
 
-    print("\n  Test Set:")
+    print("\nTEST METRICS:")
     y_test_pred = svm.predict(X_test)
     test_metrics = calculate_metrics(y_test, y_test_pred)
-    print(f"    Accuracy:  {test_metrics['accuracy']:.4f}")
-    print(f"    Precision: {test_metrics['precision']:.4f}")
-    print(f"    Recall:    {test_metrics['recall']:.4f}")
-    print(f"    F1-Score:  {test_metrics['f1_score']:.4f}")
+    print(test_metrics)
     print_confusion_matrix(test_metrics['confusion_matrix'])
 
-    # Visualizations
-    print(f"\n[7.5/8] Creating visualizations...")
-    plot_hyperplane_2d(X_test, y_test, svm, OUTPUT_DIR, 'hyperplane_visualization.png')
-    plot_loss_curve(svm.losses, OUTPUT_DIR, 'training_loss_curve.png')
-    plot_confusion_matrix_heatmap(test_metrics['confusion_matrix'], OUTPUT_DIR, 'confusion_matrix_test.png')
-    plot_performance_metrics(train_metrics, test_metrics, OUTPUT_DIR, 'performance_metrics.png')
-
-    # [8/8] SAVE MODEL
-    print(f"\n[8/8] Saving model...")
-
+    # Save model and metadata
     model_data = {
         'svm': svm,
         'tfidf': tfidf,
         'scaler': scaler,
         'numeric_features': numeric_features,
-        'label_map': label_map,
-        'hyperparameters': {
-            'max_features_tfidf': MAX_FEATURES_TFIDF,
-            'ngram_range': NGRAM_RANGE,
-            'min_df': MIN_DF,
-            'learning_rate': LEARNING_RATE,
-            'lambda_param': LAMBDA_PARAM,
-            'n_iterations': N_ITERATIONS
-        },
+        'max_features_tfidf': MAX_FEATURES_TFIDF,
         'train_metrics': train_metrics,
-        'test_metrics': test_metrics,
-        'preprocessing': {
-            'has_sastrawi': HAS_SASTRAWI,
-            'normalization_dict': NORMALIZATION_DICT
-        }
+        'test_metrics': test_metrics
     }
-
-    model_file = os.path.join(OUTPUT_DIR, "svm_multifeature_model.pkl")
+    model_file = os.path.join(OUTPUT_DIR, "svm_multifeature_model_unified.pkl")
     with open(model_file, 'wb') as f:
         pickle.dump(model_data, f)
-    print(f"  [OK] Model saved: {model_file}")
+    print("Model saved to:", model_file)
 
-    # Save metrics CSV
+    # Save metrics CSV & plots
     metrics_df = pd.DataFrame({
-        'Set': ['Training', 'Test'],
+        'Set': ['Train','Test'],
         'Accuracy': [train_metrics['accuracy'], test_metrics['accuracy']],
-        'Precision': [train_metrics['precision'], test_metrics['precision']],
-        'Recall': [train_metrics['recall'], test_metrics['recall']],
-        'F1-Score': [train_metrics['f1_score'], test_metrics['f1_score']]
+        'Precision':[train_metrics['precision'], test_metrics['precision']],
+        'Recall':[train_metrics['recall'], test_metrics['recall']],
+        'F1': [train_metrics['f1_score'], test_metrics['f1_score']]
     })
-    metrics_file = os.path.join(OUTPUT_DIR, "svm_multifeature_metrics.csv")
+    metrics_file = os.path.join(OUTPUT_DIR, "metrics_summary_unified.csv")
     metrics_df.to_csv(metrics_file, index=False)
-    print(f"  [OK] Metrics saved: {metrics_file}")
+    print("Saved metrics summary:", metrics_file)
 
-    print("\n" + "=" * 80)
-    print("TRAINING COMPLETE!")
-    print("=" * 80)
-    print(f"\nTest Set Performance:")
-    print(f"  Accuracy:  {test_metrics['accuracy']:.4f}")
-    print(f"  Precision: {test_metrics['precision']:.4f}")
-    print(f"  Recall:    {test_metrics['recall']:.4f}")
-    print(f"  F1-Score:  {test_metrics['f1_score']:.4f}")
-    print("\n" + "=" * 80)
+    # Plots
+    metrics_plot = os.path.join(OUTPUT_DIR, "metrics_visualization_unified.png")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(len(metrics_df['Set']))
+    width = 0.2
 
+    bars1 = ax.bar(x - 1.5*width, metrics_df['Accuracy'], width, label='Accuracy', alpha=0.8)
+    bars2 = ax.bar(x - 0.5*width, metrics_df['Precision'], width, label='Precision', alpha=0.8)
+    bars3 = ax.bar(x + 0.5*width, metrics_df['Recall'], width, label='Recall', alpha=0.8)
+    bars4 = ax.bar(x + 1.5*width, metrics_df['F1'], width, label='F1 Score', alpha=0.8)
+
+    for bars in [bars1, bars2, bars3, bars4]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    ax.set_xlabel('Dataset', fontsize=12)
+    ax.set_ylabel('Score', fontsize=12)
+    ax.set_title('SVM Performance Metrics (Unified Features)', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics_df['Set'])
+    ax.legend(loc='upper right')
+    ax.set_ylim(0, 1.15)
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(metrics_plot, dpi=150, bbox_inches='tight')
+    plt.close()
+    print("Saved metrics visualization:", metrics_plot)
+
+    # Additional visualizations
+    plot_hyperplane_2d(X_test, y_test, svm, OUTPUT_DIR, 'hyperplane_visualization_unified.png')
+    plot_loss_curve(svm.losses, OUTPUT_DIR, 'training_loss_curve_unified.png')
+    plot_confusion_matrix_heatmap(test_metrics['confusion_matrix'], OUTPUT_DIR, 'confusion_matrix_test_unified.png')
+    plot_performance_metrics(train_metrics, test_metrics, OUTPUT_DIR, 'performance_metrics_unified.png')
+
+    print("TRAINING COMPLETE (UNIFIED FEATURES).")
 
 if __name__ == "__main__":
     main()

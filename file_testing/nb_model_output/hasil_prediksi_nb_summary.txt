@@ -1,0 +1,22 @@
+================================================================================
+SUMMARY PREDIKSI FAKE REVIEW - NAIVE BAYES
+================================================================================
+
+Input file: ../dataset_testing/tes.csv
+Output file: nb_model_output/hasil_prediksi_nb.csv
+Total data: 20
+
+Distribusi Prediksi:
+  - REAL: 12 (60.00%)
+  - FAKE: 8 (40.00%)
+
+Confidence Statistics:
+  - Mean: 0.9750
+  - Median: 1.0000
+  - Std: 0.0707
+
+Model Performance (Test Set):
+  - Accuracy:  0.8102
+  - Precision: 0.8467
+  - Recall:    0.7635
+  - F1-Score:  0.8030

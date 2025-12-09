@@ -175,7 +175,7 @@ def parse_image_field(x):
 # Text quality stubs (if not available)
 # ---------------------------
 try:
-    from text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
+    from file_testing.text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
     HAS_TQ = True
 except Exception:
     HAS_TQ = False
@@ -611,7 +611,7 @@ def plot_feature_importances(importances, feature_names, outpath):
 # MAIN training pipeline
 # ---------------------------
 def main():
-    INPUT = "dataset_balance/google_review_balanced_combined.csv"
+    INPUT = "../dataset_balance/google_review_balanced_undersampling.csv"
     OUTDIR = "rf_model_output"
     os.makedirs(OUTDIR, exist_ok=True)
 
@@ -748,10 +748,25 @@ def main():
     x = np.arange(len(metrics_df['Set']))
     width = 0.2
 
-    ax.bar(x - 1.5*width, metrics_df['Accuracy'], width, label='Accuracy', alpha=0.8)
-    ax.bar(x - 0.5*width, metrics_df['Precision'], width, label='Precision', alpha=0.8)
-    ax.bar(x + 0.5*width, metrics_df['Recall'], width, label='Recall', alpha=0.8)
-    ax.bar(x + 1.5*width, metrics_df['F1'], width, label='F1 Score', alpha=0.8)
+    # create bars and keep handles so we can put values above each bar
+    bars1 = ax.bar(x - 1.5*width, metrics_df['Accuracy'], width, label='Accuracy', alpha=0.8)
+    bars2 = ax.bar(x - 0.5*width, metrics_df['Precision'], width, label='Precision', alpha=0.8)
+    bars3 = ax.bar(x + 0.5*width, metrics_df['Recall'], width, label='Recall', alpha=0.8)
+    bars4 = ax.bar(x + 1.5*width, metrics_df['F1'], width, label='F1 Score', alpha=0.8)
+
+    # Tambahkan nilai di atas setiap bar (format 3 desimal)
+    for bars in [bars1, bars2, bars3, bars4]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.,
+                height,
+                f'{height:.3f}',
+                ha='center',
+                va='bottom',
+                fontsize=9,
+                fontweight='bold'
+            )
 
     ax.set_xlabel('Dataset', fontsize=12)
     ax.set_ylabel('Score', fontsize=12)

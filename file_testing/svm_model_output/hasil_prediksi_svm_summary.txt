@@ -1,0 +1,22 @@
+================================================================================
+SUMMARY PREDIKSI FAKE REVIEW
+================================================================================
+
+Input file: ../dataset_testing/tes.csv
+Output file: svm_model_output/hasil_prediksi_svm.csv
+Total data: 20
+
+Distribusi Prediksi:
+  - REAL: 11 (55.00%)
+  - FAKE: 9 (45.00%)
+
+Confidence Statistics:
+  - Mean: 0.8296
+  - Median: 0.7342
+  - Std: 0.1291
+
+Model Performance (Test Set):
+  - Accuracy:  0.8102
+  - Precision: 0.8662
+  - Recall:    0.7395
+  - F1-Score:  0.7978

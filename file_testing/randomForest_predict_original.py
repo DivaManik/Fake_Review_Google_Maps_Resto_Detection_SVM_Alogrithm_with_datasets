@@ -300,7 +300,7 @@ class RandomForestManual:
 
 # ===== Try import text_quality_detector =====
 try:
-    from text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
+    from file_testing.text_quality_detector import extract_text_quality_features, get_text_quality_feature_names
     HAS_TEXT_QUALITY = True
 except Exception:
     HAS_TEXT_QUALITY = False

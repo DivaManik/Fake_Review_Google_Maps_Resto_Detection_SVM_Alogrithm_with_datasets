@@ -13,8 +13,9 @@ import os
 # ---------------------------
 # === KONFIGURASI
 # ---------------------------
-INPUT_FILE = "label_output/google_review_preprocessed.csv"
+INPUT_FILE = "data_label/data_labeled.csv"
 OUTPUT_DIR = "label_output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("="*80)
 print("BALANCING DATASET - FAKE vs REAL REVIEWS")

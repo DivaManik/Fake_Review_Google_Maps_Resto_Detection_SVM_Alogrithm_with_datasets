@@ -11,10 +11,10 @@ print("="*80)
 
 # Cek file yang ada
 files_to_check = [
-    "dataset_balance/google_review_preprocessed.csv",
-    "dataset_balance/google_review_balanced_undersampling.csv",
-    "dataset_balance/google_review_balanced_oversampling.csv",
-    "dataset_balance/google_review_balanced_combined.csv"
+    # "label_output/google_review_preprocessed.csv",
+    "label_output/google_review_balanced_undersampling.csv",
+    "label_output/google_review_balanced_oversampling.csv",
+    "label_output/google_review_balanced_combined.csv"
 ]
 
 print("\n[1] Mengecek file yang tersedia...")

@@ -3,7 +3,7 @@ Debug script untuk test text quality detector pada teks gibberish dari tes.csv
 """
 
 import pandas as pd
-from text_quality_detector import detect_gibberish, extract_text_quality_features
+from file_testing.text_quality_detector import detect_gibberish, extract_text_quality_features
 from preprocessing import preprocess_pipeline
 
 print("="*80)

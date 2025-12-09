@@ -1,0 +1,17 @@
+Random Forest Manual Prediction Summary
+============================================================
+Input: ../dataset_testing/tes.csv
+Output: rf_model_output/hasil_prediksi_rf.csv
+Rows: 20
+
+Prediction Distribution:
+  REAL: 15
+  FAKE: 5
+
+Confidence Stats:
+  Mean: 0.8350
+  Median: 0.9000
+
+Post-Processing (Gibberish Override):
+  Total overridden REAL -> FAKE: 1
+  Overridden rows: [12]
