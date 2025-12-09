@@ -15,15 +15,19 @@
 ```
 Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 │
+├── labeling_eda.py                     # Script labeling otomatis (heuristic) + EDA
 ├── preprocessing.py                    # Pipeline preprocessing teks Indonesia
 ├── balance_dataset.py                  # Script balancing dataset
 ├── check_balance.py                    # Verifikasi distribusi dataset
 ├── debug_gibberish.py                  # Testing deteksi kualitas teks
 │
+├── dataset_raw/                        # Dataset mentah hasil scraping
+│   └── dataset_gabungan.csv            # Data review gabungan dari Apify
+│
 ├── dataset_balance/                    # Dataset yang sudah di-balance
-│   ├── google_review_balanced_combined.csv         # Metode hybrid (20 MB)
-│   ├── google_review_balanced_oversampling.csv     # Metode oversampling (25 MB)
-│   └── google_review_balanced_undersampling.csv    # Metode undersampling (14 MB)
+│   ├── google_review_balanced_combined.csv         # Metode hybrid
+│   ├── google_review_balanced_oversampling.csv     # Metode oversampling
+│   └── google_review_balanced_undersampling.csv    # Metode undersampling
 │
 ├── dataset_testing/                    # Data untuk testing
 │   └── tes.csv                         # Sample data test
@@ -65,13 +69,25 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
    ┌──────────────────┐
    │ 1. PENGUMPULAN   │  Scraping data review dari Google Maps
    │    DATA          │  wilayah Yogyakarta menggunakan Apify
+   │                  │  Output: dataset_raw/dataset_gabungan.csv
    └────────┬─────────┘
             │
             ▼
-   ┌──────────────────┐
-   │ 2. LABELING      │  Memberikan label FAKE atau REAL
-   │                  │  pada setiap review
-   └────────┬─────────┘
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ 2. LABELING OTOMATIS (labeling_eda.py)                          │
+   │                                                                  │
+   │  Menghitung fake_score berdasarkan kriteria:                    │
+   │  - Bintang 5 tanpa teks (+3) / teks pendek (+2)                 │
+   │  - Tidak ada foto reviewer (+1)                                  │
+   │  - Detail rating semua 5 (+1)                                    │
+   │  - Reviewer baru ≤2 review (+2)                                  │
+   │  - Bukan Local Guide (+1)                                        │
+   │  - Konteks review kosong (+1)                                    │
+   │  - Banyak review di hari sama >5 (+2)                           │
+   │                                                                  │
+   │  Label: fake_score >= 4 → FAKE, else → REAL                     │
+   │  Output: google_review_labeled.csv                               │
+   └────────┬────────────────────────────────────────────────────────┘
             │
             ▼
    ┌─────────────────────────────────────────────────────────────────┐
@@ -138,6 +154,16 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 
 ## Fungsi-Fungsi dalam Proyek
 
+### labeling_eda.py
+
+| Fungsi | Deskripsi |
+|--------|-----------|
+| `find_col(*cands)` | Mencari kolom dengan toleransi nama (case-insensitive) |
+| `parse_date_safe(x)` | Parsing tanggal dengan berbagai format |
+| `review_detail_all_fives(x)` | Mengecek apakah semua detail rating bernilai 5 |
+| `compute_fake_score(row)` | Menghitung skor fake berdasarkan kriteria heuristik |
+| `train_and_eval(clf, name)` | Training dan evaluasi model (opsional dengan --train) |
+
 ### preprocessing.py
 
 | Fungsi | Deskripsi |
@@ -168,8 +194,6 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 | `LinearSVM.predict(X)` | Memprediksi label dari data input |
 | `LinearSVM.decision_function(X)` | Menghitung nilai keputusan (score) |
 | `TfidfVectorizerManual` | Implementasi manual TF-IDF vectorization |
-| `TfidfVectorizerManual.fit(documents)` | Mempelajari vocabulary dan IDF |
-| `TfidfVectorizerManual.transform(documents)` | Mengubah dokumen menjadi vektor TF-IDF |
 | `StandardScalerSimple` | Normalisasi fitur dengan Z-score |
 | `PCA` | Principal Component Analysis untuk visualisasi |
 | `extract_features(df)` | Mengekstrak semua fitur dari dataframe |
@@ -183,11 +207,9 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 | `DecisionTreeCART.fit(X, y)` | Training tree dengan Gini Impurity |
 | `DecisionTreeCART.predict(X)` | Prediksi menggunakan tree |
 | `DecisionTreeCART._best_split()` | Mencari split terbaik berdasarkan Gini |
-| `DecisionTreeCART._compute_feature_importances()` | Menghitung feature importance |
 | `RandomForestManual` | Implementasi manual Random Forest (ensemble of trees) |
 | `RandomForestManual.fit(X, y)` | Training multiple trees dengan bootstrap sampling |
 | `RandomForestManual.predict(X)` | Majority voting dari semua trees |
-| `RandomForestManual.predict_proba(X)` | Prediksi probabilitas |
 | `TreeNode` | Class untuk node dalam decision tree |
 
 ### nb_train_akhir.py
@@ -195,11 +217,7 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 | Class/Fungsi | Deskripsi |
 |--------------|-----------|
 | `MultinomialNB` | Naive Bayes untuk fitur TF-IDF (diskrit) |
-| `MultinomialNB.fit(X, y)` | Training dengan menghitung probabilitas kata per kelas |
-| `MultinomialNB.predict_log_proba(X)` | Menghitung log probabilitas |
 | `GaussianNB` | Naive Bayes untuk fitur numerik (kontinu) |
-| `GaussianNB.fit(X, y)` | Training dengan menghitung mean dan variance per kelas |
-| `GaussianNB.predict_log_proba(X)` | Menghitung log probabilitas dengan distribusi Gaussian |
 | `HybridNaiveBayes` | Kombinasi MultinomialNB (teks) dan GaussianNB (numerik) |
 | `HybridNaiveBayes.fit(X_text, X_numeric, y)` | Training kedua model |
 | `HybridNaiveBayes.predict(X_text, X_numeric)` | Prediksi dengan weighted combination |
@@ -209,20 +227,32 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 | Fungsi | Deskripsi |
 |--------|-----------|
 | `vowel_consonant_ratio(text)` | Menghitung rasio vokal terhadap konsonan |
-| `is_abnormal_vowel_ratio(text)` | Mengecek apakah rasio vokal abnormal |
 | `valid_word_ratio(text)` | Menghitung persentase kata valid dalam kamus |
-| `is_low_valid_words(text)` | Mengecek apakah teks memiliki sedikit kata valid |
-| `average_word_length(text)` | Menghitung rata-rata panjang kata |
-| `is_long_words(text)` | Mengecek apakah kata-kata terlalu panjang |
 | `text_entropy(text)` | Menghitung Shannon entropy dari teks |
-| `is_high_entropy(text)` | Mengecek apakah entropy terlalu tinggi |
 | `repeated_char_ratio(text)` | Menghitung rasio karakter berulang |
-| `has_repeated_chars(text)` | Mengecek apakah ada karakter berulang berlebihan |
-| `consonant_cluster_ratio(text)` | Mendeteksi cluster konsonan |
-| `has_long_consonant_cluster(text)` | Mengecek cluster konsonan panjang |
 | `detect_gibberish(text)` | Mendeteksi teks gibberish/spam secara keseluruhan |
-| `extract_text_quality_features(df, text_column)` | Mengekstrak semua fitur kualitas teks ke dataframe |
-| `get_text_quality_feature_names()` | Mengembalikan list nama fitur kualitas teks |
+| `extract_text_quality_features(df, text_column)` | Mengekstrak semua fitur kualitas teks |
+
+---
+
+## Kriteria Labeling Heuristik
+
+Labeling dilakukan secara otomatis menggunakan `labeling_eda.py` dengan menghitung `fake_score`:
+
+| Kriteria | Poin |
+|----------|------|
+| Bintang 5 tanpa teks | +3 |
+| Bintang 5 dengan teks sangat pendek (<5 kata) | +2 |
+| Tidak ada foto reviewer | +1 |
+| Detail rating semua bernilai 5 | +1 |
+| Reviewer baru (≤2 review) | +2 |
+| Bukan Local Guide | +1 |
+| Konteks review kosong | +1 |
+| Banyak review di hari yang sama (>5) | +2 |
+
+**Penentuan Label:**
+- `fake_score >= 4` → **FAKE**
+- `fake_score < 4` → **REAL**
 
 ---
 
@@ -231,11 +261,6 @@ Fake_Review_Google_Maps_Resto_Detection_SVM_Alogrithm_with_datasets/
 ### A. TF-IDF Features (1000 fitur)
 
 Mengubah teks menjadi vektor numerik berdasarkan frekuensi dan kepentingan kata.
-
-**Konfigurasi:**
-- `max_features`: 1000
-- `ngram_range`: (1, 1) - unigram
-- `min_df`: 2
 
 ### B. Numeric Features (18+ fitur)
 
@@ -280,7 +305,6 @@ Mengubah teks menjadi vektor numerik berdasarkan frekuensi dan kepentingan kata.
 - **Loss Function:** Hinge Loss + L2 Regularization
 - **Optimisasi:** Gradient Descent dengan Early Stopping
 - **Label:** FAKE (+1), REAL (-1)
-- **Keputusan:** score >= 0 → FAKE, score < 0 → REAL
 
 **Hyperparameter:**
 ```
@@ -296,7 +320,6 @@ early_stopping_rounds = 50
 - **Split Criterion:** Gini Impurity
 - **Ensemble Method:** Majority Voting dari 30 trees
 - **Bootstrap:** Random sampling with replacement
-- **Feature Selection:** √(total_fitur) per split
 
 **Hyperparameter:**
 ```
@@ -313,7 +336,6 @@ max_features = "sqrt"
 - **Multinomial NB:** Untuk fitur TF-IDF (diskrit)
 - **Gaussian NB:** Untuk fitur numerik (kontinu)
 - **Kombinasi:** Weighted average (60% teks, 40% numerik)
-- **Smoothing:** Laplace smoothing (alpha=1.0)
 
 **Hyperparameter:**
 ```
@@ -334,14 +356,6 @@ max_features_tfidf = 1000
 | **Recall** | TP / (TP + FN) |
 | **F1-Score** | 2 × (Precision × Recall) / (Precision + Recall) |
 
-**Confusion Matrix:**
-```
-                 Predicted
-              FAKE    REAL
-Actual FAKE    TP      FN
-       REAL    FP      TN
-```
-
 ---
 
 ## Output yang Dihasilkan
@@ -361,7 +375,6 @@ Actual FAKE    TP      FN
 - Performance Metrics Bar Chart
 - Training Loss Curve
 - Feature Importance Plot
-- Hyperplane Visualization (PCA 2D)
 
 ### Hasil Prediksi (.csv)
 - `hasil_prediksi_svm.csv`
@@ -378,8 +391,9 @@ Actual FAKE    TP      FN
 | **numpy** | Komputasi numerik dan array |
 | **matplotlib** | Visualisasi (plot, grafik) |
 | **Sastrawi** | Preprocessing teks bahasa Indonesia (stemming, stopword) |
+| **scikit-learn** | Digunakan di labeling_eda.py untuk training opsional |
 
-**Catatan:** Semua algoritma machine learning (SVM, Random Forest, Naive Bayes, TF-IDF, PCA, Standard Scaler) diimplementasikan secara manual tanpa menggunakan library sklearn untuk keperluan pembelajaran.
+**Catatan:** Algoritma ML di file training (SVM, Random Forest, Naive Bayes, TF-IDF) diimplementasikan secara manual untuk keperluan pembelajaran.
 
 ---
 
