@@ -1036,6 +1036,338 @@ def calculate_metrics(y_true, y_pred):
 
 ---
 
+## Metode Evaluasi pada Setiap Script Training
+
+### 1. Evaluasi pada SVM (`svm_train.py`)
+
+#### A. Train-Test Split
+```python
+TEST_SIZE = 0.2      # 20% data untuk testing
+VAL_SIZE = 0.1       # 10% dari training untuk validation
+RANDOM_SEED = 42     # Reproducibility
+
+# Split data
+split_idx = int(len(X) * (1 - TEST_SIZE))
+X_train, X_test = X[:split_idx], X[split_idx:]
+y_train, y_test = y[:split_idx], y[split_idx:]
+```
+
+**Pembagian Data:**
+```
+Total Data: 100%
+├── Training Set: 80%
+│   ├── Training: 72% (untuk training model)
+│   └── Validation: 8% (untuk early stopping)
+└── Test Set: 20% (untuk evaluasi final)
+```
+
+#### B. Early Stopping dengan Validation Loss
+```python
+# Proses early stopping
+best_val_loss = np.inf
+no_improve_rounds = 0
+early_stopping_rounds = 50
+
+for iteration in range(n_iterations):
+    # Hitung training loss
+    train_loss = hinge_loss(X_train, y_train)
+
+    # Hitung validation loss
+    val_loss = hinge_loss(X_val, y_val)
+
+    # Cek improvement
+    if val_loss < best_val_loss - tolerance:
+        best_val_loss = val_loss
+        no_improve_rounds = 0
+        # Simpan best weights
+    else:
+        no_improve_rounds += 1
+
+    # Stop jika tidak ada improvement
+    if no_improve_rounds >= early_stopping_rounds:
+        break  # Early stopping triggered
+```
+
+**Kegunaan Early Stopping:**
+- Mencegah overfitting
+- Menghentikan training saat model mulai overfit ke training data
+- Menyimpan bobot terbaik berdasarkan validation loss
+
+#### C. Metrik yang Dihitung
+| Metrik | Training Set | Test Set |
+|--------|--------------|----------|
+| Accuracy | ✓ | ✓ |
+| Precision | ✓ | ✓ |
+| Recall | ✓ | ✓ |
+| F1-Score | ✓ | ✓ |
+| Confusion Matrix | ✓ | ✓ |
+| Training Loss Curve | ✓ | - |
+| Validation Loss | ✓ | - |
+
+#### D. Visualisasi yang Dihasilkan
+1. **Confusion Matrix Heatmap** - Distribusi prediksi vs aktual
+2. **Performance Metrics Bar Chart** - Perbandingan train vs test
+3. **Training Loss Curve** - Loss per iterasi
+4. **Hyperplane Visualization** - Proyeksi PCA 2D dengan decision boundary
+
+---
+
+### 2. Evaluasi pada Random Forest (`randomForest_train.py`)
+
+#### A. Train-Test Split
+```python
+TEST_SIZE = 0.2
+RANDOM_SEED = 42
+
+# Shuffle dan split
+rng = np.random.RandomState(RANDOM_SEED)
+perm = rng.permutation(len(X))
+X, y = X[perm], y[perm]
+
+split_idx = int(len(X) * (1 - TEST_SIZE))
+X_train, X_test = X[:split_idx], X[split_idx:]
+y_train, y_test = y[:split_idx], y[split_idx:]
+```
+
+#### B. Out-of-Bag (OOB) Score
+
+OOB Score adalah metode evaluasi unik untuk Random Forest yang memanfaatkan sampel yang tidak terpilih dalam bootstrap sampling.
+
+```python
+# Konsep OOB Score
+for tree_i in forest:
+    # Bootstrap sample (dengan replacement)
+    bootstrap_indices = random.choice(n_samples, size=n_samples, replace=True)
+
+    # OOB samples = sampel yang TIDAK terpilih
+    oob_indices = samples NOT in bootstrap_indices  # ~37% dari data
+
+    # Prediksi OOB samples menggunakan tree ini
+    oob_predictions[oob_indices] = tree_i.predict(X[oob_indices])
+
+# Hitung OOB Score (rata-rata akurasi pada OOB samples)
+oob_score = accuracy(y_true[oob_mask], oob_predictions[oob_mask])
+```
+
+**Rumus OOB Score:**
+```
+Probabilitas sampel TIDAK terpilih dalam 1 bootstrap:
+P(not selected) = (1 - 1/n)^n ≈ 1/e ≈ 0.368 ≈ 37%
+
+OOB Score = Σ (prediksi benar pada OOB) / Σ (total OOB predictions)
+```
+
+**Keunggulan OOB:**
+- Tidak memerlukan validation set terpisah
+- Estimasi unbiased dari generalization error
+- Efisien secara komputasi
+
+**Implementasi dalam kode:**
+```python
+def fit(self, X, y):
+    oob_votes = [defaultdict(int) for _ in range(n_samples)]
+
+    for i in range(self.n_estimators):
+        # Bootstrap sampling
+        indices = self.random_state.randint(0, n_samples, size=n_samples)
+
+        # Train tree
+        tree.fit(X[indices], y[indices])
+
+        # OOB predictions
+        mask_in = np.zeros(n_samples, dtype=bool)
+        mask_in[indices] = True
+        oob_idx = np.where(~mask_in)[0]  # indices NOT in bootstrap
+
+        if oob_idx.size > 0:
+            preds_oob = tree.predict(X[oob_idx])
+            for idx, pred in zip(oob_idx, preds_oob):
+                oob_votes[idx][pred] += 1
+
+    # Calculate OOB score
+    oob_pred = [max(votes, key=votes.get) for votes in oob_votes if votes]
+    self.oob_score_ = np.mean(y[mask] == oob_pred[mask])
+```
+
+#### C. Feature Importances
+
+Random Forest menghitung pentingnya setiap fitur berdasarkan seberapa sering fitur tersebut digunakan untuk split.
+
+```python
+# Perhitungan Feature Importance (berdasarkan penggunaan)
+def _compute_feature_importances(self):
+    importances = np.zeros(n_features)
+
+    def traverse(node):
+        if node.is_leaf():
+            return
+        # Tambah count untuk fitur yang digunakan split
+        importances[node.feature_idx] += 1
+        traverse(node.left)
+        traverse(node.right)
+
+    traverse(self.root)
+
+    # Normalisasi
+    return importances / importances.sum()
+
+# Rata-rata importance dari semua trees
+final_importances = np.mean([tree.feature_importances_ for tree in forest])
+```
+
+#### D. Metrik yang Dihitung
+| Metrik | Training Set | Test Set | OOB |
+|--------|--------------|----------|-----|
+| Accuracy | ✓ | ✓ | ✓ |
+| Precision | ✓ | ✓ | - |
+| Recall | ✓ | ✓ | - |
+| F1-Score | ✓ | ✓ | - |
+| Confusion Matrix | ✓ | ✓ | - |
+| Feature Importances | ✓ | - | - |
+| OOB Score | - | - | ✓ |
+
+#### E. Visualisasi yang Dihasilkan
+1. **Metrics Visualization** - Bar chart train vs test
+2. **Feature Importances Plot** - Ranking fitur berdasarkan importance
+
+---
+
+### 3. Evaluasi pada Naive Bayes (`nb_train_akhir.py`)
+
+#### A. Train-Test Split
+```python
+TEST_SIZE = 0.2
+RANDOM_SEED = 42
+
+# Shuffle dan split (sama dengan RF)
+split_idx = int(len(X) * (1 - TEST_SIZE))
+X_train_text, X_test_text = X_text[:split_idx], X_text[split_idx:]
+X_train_num, X_test_num = X_num[:split_idx], X_num[split_idx:]
+y_train, y_test = y[:split_idx], y[split_idx:]
+```
+
+#### B. Probability Prediction
+
+Naive Bayes memberikan probabilitas untuk setiap kelas, bukan hanya label.
+
+```python
+# Prediksi probabilitas
+def predict_proba(self, X_text, X_numeric):
+    # Log probability dari Multinomial NB (teks)
+    log_proba_text = self.multinomial_nb.predict_log_proba(X_text)
+
+    # Log probability dari Gaussian NB (numerik)
+    log_proba_numeric = self.gaussian_nb.predict_log_proba(X_numeric)
+
+    # Weighted combination
+    log_proba_combined = (self.text_weight * log_proba_text +
+                          self.numeric_weight * log_proba_numeric)
+
+    # Softmax untuk convert ke probability
+    proba = softmax(log_proba_combined)
+
+    return proba  # [[P(FAKE), P(REAL)], ...]
+
+# Contoh output
+# Sample 1: [0.85, 0.15] → 85% FAKE, 15% REAL → Prediksi: FAKE
+# Sample 2: [0.20, 0.80] → 20% FAKE, 80% REAL → Prediksi: REAL
+```
+
+#### C. Evaluasi Komponen Terpisah
+
+Hybrid NB memungkinkan evaluasi kontribusi masing-masing komponen:
+
+```python
+# Evaluasi Multinomial NB saja (fitur teks)
+y_pred_text_only = multinomial_nb.predict(X_text)
+text_accuracy = accuracy(y_true, y_pred_text_only)
+
+# Evaluasi Gaussian NB saja (fitur numerik)
+y_pred_numeric_only = gaussian_nb.predict(X_numeric)
+numeric_accuracy = accuracy(y_true, y_pred_numeric_only)
+
+# Evaluasi Hybrid (kombinasi)
+y_pred_hybrid = hybrid_nb.predict(X_text, X_numeric)
+hybrid_accuracy = accuracy(y_true, y_pred_hybrid)
+```
+
+**Contoh Hasil:**
+```
+Komponen           | Accuracy
+-------------------|----------
+Multinomial NB     | 78.5%
+Gaussian NB        | 72.3%
+Hybrid (60:40)     | 82.1%  ← Kombinasi lebih baik
+```
+
+#### D. Metrik yang Dihitung
+| Metrik | Training Set | Test Set |
+|--------|--------------|----------|
+| Accuracy | ✓ | ✓ |
+| Precision | ✓ | ✓ |
+| Recall | ✓ | ✓ |
+| F1-Score | ✓ | ✓ |
+| Confusion Matrix | ✓ | ✓ |
+| Class Probabilities | ✓ | ✓ |
+
+#### E. Visualisasi yang Dihasilkan
+1. **Metrics Visualization** - Bar chart dengan warna berbeda per metrik
+
+---
+
+### Perbandingan Metode Evaluasi Antar Model
+
+| Aspek | SVM | Random Forest | Naive Bayes |
+|-------|-----|---------------|-------------|
+| **Train-Test Split** | 80-20 | 80-20 | 80-20 |
+| **Validation Set** | ✓ (10%) | ✗ (pakai OOB) | ✗ |
+| **Early Stopping** | ✓ | ✗ | ✗ |
+| **OOB Score** | ✗ | ✓ | ✗ |
+| **Feature Importance** | Dari weight | ✓ (built-in) | ✗ |
+| **Probability Output** | ✗ (score saja) | ✓ | ✓ |
+| **Loss Monitoring** | ✓ | ✗ | ✗ |
+
+### Kode Evaluasi Lengkap
+
+```python
+# === EVALUASI UMUM (digunakan di semua model) ===
+
+def evaluate_model(model, X_train, y_train, X_test, y_test):
+    """Evaluasi lengkap untuk semua model"""
+
+    # Prediksi
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+
+    # Hitung metrik training
+    train_metrics = calculate_metrics(y_train, y_train_pred)
+    print("=== TRAIN METRICS ===")
+    print(f"Accuracy:  {train_metrics['accuracy']:.4f}")
+    print(f"Precision: {train_metrics['precision']:.4f}")
+    print(f"Recall:    {train_metrics['recall']:.4f}")
+    print(f"F1-Score:  {train_metrics['f1_score']:.4f}")
+    print_confusion_matrix(train_metrics['confusion_matrix'])
+
+    # Hitung metrik test
+    test_metrics = calculate_metrics(y_test, y_test_pred)
+    print("\n=== TEST METRICS ===")
+    print(f"Accuracy:  {test_metrics['accuracy']:.4f}")
+    print(f"Precision: {test_metrics['precision']:.4f}")
+    print(f"Recall:    {test_metrics['recall']:.4f}")
+    print(f"F1-Score:  {test_metrics['f1_score']:.4f}")
+    print_confusion_matrix(test_metrics['confusion_matrix'])
+
+    # Cek overfitting
+    accuracy_gap = train_metrics['accuracy'] - test_metrics['accuracy']
+    if accuracy_gap > 0.1:
+        print(f"\n⚠️ WARNING: Possible overfitting detected!")
+        print(f"   Train-Test accuracy gap: {accuracy_gap:.4f}")
+
+    return train_metrics, test_metrics
+```
+
+---
+
 ## Output yang Dihasilkan
 
 ### Model Terlatih (.pkl)
