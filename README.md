@@ -505,6 +505,466 @@ max_features_tfidf = 1000
 
 ---
 
+## Rumus dan Perhitungan Algoritma Training
+
+### 1. TF-IDF (Term Frequency - Inverse Document Frequency)
+
+TF-IDF adalah metode untuk mengkonversi teks menjadi representasi numerik berdasarkan frekuensi dan kepentingan kata.
+
+#### Rumus Term Frequency (TF):
+```
+TF(t, d) = jumlah kemunculan kata t dalam dokumen d / total kata dalam dokumen d
+```
+
+**Contoh:**
+- Dokumen: "makanan enak sekali makanan"
+- TF("makanan") = 2/4 = 0.5
+- TF("enak") = 1/4 = 0.25
+
+#### Rumus Inverse Document Frequency (IDF):
+```
+IDF(t) = log(N / (df(t) + 1))
+
+dimana:
+- N = total jumlah dokumen
+- df(t) = jumlah dokumen yang mengandung kata t
+```
+
+**Contoh:**
+- Total dokumen (N) = 1000
+- Dokumen mengandung "enak" = 100
+- IDF("enak") = log(1000 / (100 + 1)) = log(9.9) ≈ 2.29
+
+#### Rumus TF-IDF Final:
+```
+TF-IDF(t, d) = TF(t, d) × IDF(t)
+```
+
+**Implementasi dalam kode:**
+```python
+# TF-IDF calculation
+tf = count_word / total_words_in_doc
+idf = math.log(N / (word_doc_count[word] + 1))
+tfidf_value = tf * idf
+```
+
+---
+
+### 2. Support Vector Machine (SVM) - Linear
+
+SVM adalah algoritma klasifikasi yang mencari hyperplane optimal untuk memisahkan dua kelas.
+
+#### Model Prediksi:
+```
+f(x) = w · x + b
+
+Prediksi:
+- Jika f(x) >= 0 → FAKE (+1)
+- Jika f(x) < 0 → REAL (-1)
+
+dimana:
+- w = vektor bobot (weight)
+- x = vektor fitur input
+- b = bias
+```
+
+#### Hinge Loss Function:
+```
+L_hinge(y, f(x)) = max(0, 1 - y × f(x))
+
+dimana:
+- y = label sebenarnya (+1 atau -1)
+- f(x) = nilai prediksi model
+```
+
+**Interpretasi:**
+- Jika prediksi benar dan margin > 1: Loss = 0
+- Jika prediksi salah atau margin kecil: Loss > 0
+
+#### Total Loss dengan L2 Regularization:
+```
+L_total = (1/n) × Σᵢ max(0, 1 - yᵢ × (w · xᵢ + b)) + λ × ||w||²
+
+dimana:
+- n = jumlah sampel
+- λ = parameter regularisasi (lambda_param = 0.01)
+- ||w||² = w₁² + w₂² + ... + wₙ² (L2 norm squared)
+```
+
+#### Gradient Descent Update:
+
+**Gradient untuk w:**
+```
+∂L/∂w = 2λw - (1/n) × Σᵢ (yᵢ × xᵢ)   untuk sampel dengan margin < 1
+
+Jika margin ≥ 1 (klasifikasi benar dengan confidence):
+∂L/∂w = 2λw
+```
+
+**Gradient untuk b:**
+```
+∂L/∂b = -(1/n) × Σᵢ yᵢ   untuk sampel dengan margin < 1
+```
+
+**Update Rule:**
+```
+w_new = w_old - learning_rate × ∂L/∂w
+b_new = b_old - learning_rate × ∂L/∂b
+```
+
+**Implementasi dalam kode:**
+```python
+def _hinge_loss_and_grad(self, X, y):
+    scores = X.dot(self.w) + self.b
+    margins = 1 - y * scores
+    loss_hinge = np.maximum(0, margins)
+    loss = np.mean(loss_hinge) + self.lambda_param * np.dot(self.w, self.w)
+
+    mask = (margins > 0).astype(float)  # sampel yang perlu dikoreksi
+    grad_w = 2 * self.lambda_param * self.w - (1.0 / n) * ((mask * y) @ X)
+    grad_b = -(1.0 / n) * np.sum(mask * y)
+
+    return loss, grad_w, grad_b
+```
+
+---
+
+### 3. Random Forest dengan Decision Tree CART
+
+Random Forest adalah ensemble dari banyak Decision Tree yang dilatih pada subset data berbeda.
+
+#### Gini Impurity (Kriteria Split):
+```
+Gini(S) = 1 - Σᵢ pᵢ²
+
+dimana:
+- S = himpunan sampel pada node
+- pᵢ = proporsi kelas i dalam S
+```
+
+**Contoh:**
+- Node dengan 60 FAKE dan 40 REAL (total 100)
+- p_FAKE = 60/100 = 0.6
+- p_REAL = 40/100 = 0.4
+- Gini = 1 - (0.6² + 0.4²) = 1 - (0.36 + 0.16) = 0.48
+
+**Interpretasi Gini:**
+- Gini = 0: Node sempurna (semua sampel satu kelas)
+- Gini = 0.5: Node sangat tidak murni (50-50 split)
+
+#### Information Gain (Untuk Memilih Split Terbaik):
+```
+Gain = Gini(parent) - Σⱼ (nⱼ/n) × Gini(childⱼ)
+
+dimana:
+- nⱼ = jumlah sampel di child node j
+- n = jumlah sampel di parent node
+```
+
+**Contoh:**
+```
+Parent Node: 100 sampel (Gini = 0.48)
+Split berdasarkan fitur "stars_norm <= 0.8":
+  - Left child: 70 sampel, 50 FAKE, 20 REAL → Gini = 1 - (0.71² + 0.29²) = 0.41
+  - Right child: 30 sampel, 10 FAKE, 20 REAL → Gini = 1 - (0.33² + 0.67²) = 0.44
+
+Weighted Gini = (70/100) × 0.41 + (30/100) × 0.44 = 0.287 + 0.132 = 0.419
+Information Gain = 0.48 - 0.419 = 0.061
+```
+
+#### Algoritma CART (Classification and Regression Trees):
+
+```
+Fungsi BUILD_TREE(X, y, depth):
+    1. Jika stopping condition (max_depth, min_samples, pure node):
+       return LEAF_NODE dengan majority class
+
+    2. Untuk setiap fitur f:
+       - Untuk setiap threshold t:
+         - Split data: left = X[f <= t], right = X[f > t]
+         - Hitung Gini untuk kedua child
+         - Hitung Information Gain
+
+    3. Pilih split dengan Information Gain tertinggi
+
+    4. Rekursif:
+       left_subtree = BUILD_TREE(X_left, y_left, depth+1)
+       right_subtree = BUILD_TREE(X_right, y_right, depth+1)
+
+    5. Return DECISION_NODE(feature, threshold, left_subtree, right_subtree)
+```
+
+#### Bootstrap Sampling (Bagging):
+```
+Untuk setiap tree i dari 1 sampai n_estimators:
+    1. Sample n data dengan replacement dari training set
+       (beberapa data muncul >1x, beberapa tidak terpilih)
+    2. Train Decision Tree pada bootstrap sample
+    3. Simpan tree ke dalam forest
+```
+
+#### Majority Voting (Prediksi):
+```
+Untuk input x baru:
+    votes = []
+    for tree in forest:
+        prediction = tree.predict(x)
+        votes.append(prediction)
+
+    final_prediction = mode(votes)  # kelas dengan vote terbanyak
+```
+
+**Implementasi dalam kode:**
+```python
+@staticmethod
+def gini(y):
+    if len(y) == 0:
+        return 0.0
+    _, counts = np.unique(y, return_counts=True)
+    probs = counts / counts.sum()
+    return 1.0 - np.sum(probs * probs)
+
+def _best_split(self, X, y):
+    parent_gini = self.gini(y)
+    best_gain = 0.0
+    # ... iterate features and thresholds
+    gain = parent_gini - weighted_child_gini
+    if gain > best_gain:
+        best_gain = gain
+        best_feat = feat
+        best_thresh = thresh
+```
+
+---
+
+### 4. Naive Bayes (Hybrid: Multinomial + Gaussian)
+
+Naive Bayes menggunakan Teorema Bayes dengan asumsi independensi antar fitur.
+
+#### Teorema Bayes:
+```
+P(C|X) = P(X|C) × P(C) / P(X)
+
+dimana:
+- P(C|X) = probabilitas kelas C diberikan fitur X (posterior)
+- P(X|C) = probabilitas fitur X diberikan kelas C (likelihood)
+- P(C) = probabilitas kelas C (prior)
+- P(X) = probabilitas fitur X (evidence)
+```
+
+#### Asumsi Naive Bayes (Independensi Fitur):
+```
+P(X|C) = P(x₁|C) × P(x₂|C) × ... × P(xₙ|C) = Πᵢ P(xᵢ|C)
+```
+
+#### A. Multinomial Naive Bayes (untuk TF-IDF):
+
+**Prior Probability:**
+```
+P(C) = jumlah sampel kelas C / total sampel
+
+log P(C) = log(n_samples_class / n_samples)
+```
+
+**Likelihood dengan Laplace Smoothing:**
+```
+P(word|C) = (count(word, C) + α) / (total_words_C + α × vocabulary_size)
+
+dimana:
+- α = smoothing parameter (default = 1.0)
+- count(word, C) = jumlah kemunculan word di kelas C
+```
+
+**Log Probability untuk Prediksi:**
+```
+log P(C|X) ∝ log P(C) + Σᵢ xᵢ × log P(wordᵢ|C)
+```
+
+**Implementasi dalam kode:**
+```python
+def fit(self, X, y):
+    for class_label in self.classes:
+        X_class = X[y == class_label]
+        # Prior
+        self.class_log_prior[class_label] = np.log(n_samples_class / n_samples)
+        # Likelihood dengan Laplace smoothing
+        word_counts = X_class.sum(axis=0)
+        total_count = word_counts.sum()
+        self.feature_log_prob[class_label] = np.log(
+            (word_counts + self.alpha) / (total_count + self.alpha * n_features)
+        )
+```
+
+#### B. Gaussian Naive Bayes (untuk Fitur Numerik):
+
+**Distribusi Gaussian (Normal):**
+```
+P(xᵢ|C) = (1 / √(2πσ²_C)) × exp(-(xᵢ - μ_C)² / (2σ²_C))
+
+dimana:
+- μ_C = mean fitur i untuk kelas C
+- σ²_C = variance fitur i untuk kelas C
+```
+
+**Log Likelihood:**
+```
+log P(xᵢ|C) = -0.5 × log(2πσ²_C) - (xᵢ - μ_C)² / (2σ²_C)
+```
+
+**Implementasi dalam kode:**
+```python
+def _calculate_likelihood(self, X, mean, var):
+    exponent = -0.5 * ((X - mean) ** 2) / var
+    normalizer = -0.5 * np.log(2 * np.pi * var)
+    return (normalizer + exponent).sum(axis=1)
+```
+
+#### C. Hybrid Naive Bayes (Kombinasi):
+
+```
+log P(C|X_text, X_numeric) = w_text × log P(C|X_text) + w_numeric × log P(C|X_numeric)
+
+dimana:
+- w_text = 0.6 (bobot untuk fitur teks/TF-IDF)
+- w_numeric = 0.4 (bobot untuk fitur numerik)
+```
+
+**Normalisasi Probabilitas (Softmax):**
+```
+P(C|X) = exp(log P(C|X) - max_log) / Σ exp(log P(Cᵢ|X) - max_log)
+```
+
+**Implementasi dalam kode:**
+```python
+def predict_proba(self, X_text, X_numeric):
+    log_proba_text = self.multinomial_nb.predict_log_proba(X_text)
+    log_proba_numeric = self.gaussian_nb.predict_log_proba(X_numeric)
+    log_proba_combined = self.text_weight * log_proba_text + self.numeric_weight * log_proba_numeric
+    # Softmax normalization
+    proba = np.exp(log_proba_combined - np.max(log_proba_combined, axis=1, keepdims=True))
+    proba = proba / proba.sum(axis=1, keepdims=True)
+    return proba
+```
+
+---
+
+### 5. Standard Scaler (Z-Score Normalization)
+
+Normalisasi fitur numerik agar memiliki mean=0 dan standard deviation=1.
+
+#### Rumus Z-Score:
+```
+z = (x - μ) / σ
+
+dimana:
+- x = nilai asli
+- μ = mean dari fitur
+- σ = standard deviation dari fitur
+```
+
+**Contoh:**
+- Fitur: reviewer_count = [1, 5, 10, 100, 500]
+- μ = 123.2
+- σ = 196.8
+- z(1) = (1 - 123.2) / 196.8 = -0.62
+- z(100) = (100 - 123.2) / 196.8 = -0.12
+- z(500) = (500 - 123.2) / 196.8 = 1.91
+
+**Implementasi dalam kode:**
+```python
+class StandardScalerSimple:
+    def fit(self, X):
+        self.mean_ = np.mean(X, axis=0)
+        self.scale_ = np.std(X, axis=0)
+        self.scale_[self.scale_ == 0] = 1.0  # prevent division by zero
+
+    def transform(self, X):
+        return (X - self.mean_) / self.scale_
+```
+
+---
+
+### 6. PCA (Principal Component Analysis)
+
+Digunakan untuk reduksi dimensi dan visualisasi data.
+
+#### Langkah-langkah PCA:
+
+**1. Centering Data:**
+```
+X_centered = X - μ
+
+dimana μ = mean tiap fitur
+```
+
+**2. Covariance Matrix:**
+```
+C = (1/n) × X_centeredᵀ × X_centered
+```
+
+**3. Eigenvalue Decomposition:**
+```
+C × v = λ × v
+
+dimana:
+- λ = eigenvalue (variance explained)
+- v = eigenvector (principal component direction)
+```
+
+**4. Proyeksi ke Principal Components:**
+```
+X_reduced = X_centered × V_k
+
+dimana V_k = matrix dari k eigenvectors dengan eigenvalues terbesar
+```
+
+**Implementasi dalam kode:**
+```python
+class PCA:
+    def fit(self, X):
+        self.mean = np.mean(X, axis=0)
+        Xc = X - self.mean
+        cov = np.cov(Xc.T)
+        eigvals, eigvecs = np.linalg.eig(cov)
+        idx = eigvals.argsort()[::-1]  # sort descending
+        self.components = eigvecs[:, idx[:self.n_components]]
+
+    def transform(self, X):
+        Xc = X - self.mean
+        return Xc.dot(self.components)
+```
+
+---
+
+### 7. Logaritma untuk Fitur Count
+
+Transformasi logaritmik untuk fitur dengan distribusi skewed.
+
+#### Rumus Log1p:
+```
+x_transformed = log(1 + x)
+
+dimana log adalah natural logarithm (ln)
+```
+
+**Kegunaan:**
+- Mengurangi skewness pada distribusi
+- Menangani outlier (nilai ekstrem)
+- Menjaga nilai 0 tetap valid (log(1+0) = 0)
+
+**Contoh:**
+- reviewer_count = 1 → log(1+1) = 0.69
+- reviewer_count = 10 → log(1+10) = 2.40
+- reviewer_count = 100 → log(1+100) = 4.62
+- reviewer_count = 1000 → log(1+1000) = 6.91
+
+**Implementasi:**
+```python
+df['reviewer_count_log'] = np.log1p(df['reviewer_count'])
+```
+
+---
+
 ## Metrik Evaluasi
 
 | Metrik | Rumus |
@@ -513,6 +973,66 @@ max_features_tfidf = 1000
 | **Precision** | TP / (TP + FP) |
 | **Recall** | TP / (TP + FN) |
 | **F1-Score** | 2 × (Precision × Recall) / (Precision + Recall) |
+
+### Penjelasan Confusion Matrix:
+
+```
+                        Predicted
+                    FAKE        REAL
+Actual  FAKE    TP (True     FN (False
+                 Positive)    Negative)
+
+        REAL    FP (False    TN (True
+                 Positive)    Negative)
+```
+
+**Keterangan:**
+- **TP (True Positive):** Model prediksi FAKE, kenyataannya FAKE ✓
+- **TN (True Negative):** Model prediksi REAL, kenyataannya REAL ✓
+- **FP (False Positive):** Model prediksi FAKE, kenyataannya REAL ✗ (Type I Error)
+- **FN (False Negative):** Model prediksi REAL, kenyataannya FAKE ✗ (Type II Error)
+
+### Interpretasi Metrik:
+
+| Metrik | Interpretasi | Penting Untuk |
+|--------|--------------|---------------|
+| **Accuracy** | Persentase prediksi benar secara keseluruhan | Evaluasi umum model |
+| **Precision** | Dari semua yang diprediksi FAKE, berapa yang benar FAKE | Menghindari false alarm (FP) |
+| **Recall** | Dari semua yang benar FAKE, berapa yang terdeteksi | Mendeteksi semua fake review (menghindari FN) |
+| **F1-Score** | Harmonic mean dari Precision dan Recall | Keseimbangan Precision-Recall |
+
+### Contoh Perhitungan:
+
+```
+Confusion Matrix:
+              Predicted
+            FAKE    REAL
+Actual FAKE  85      15    (100 actual FAKE)
+       REAL  10      90    (100 actual REAL)
+
+Perhitungan:
+- TP = 85, TN = 90, FP = 10, FN = 15
+- Accuracy = (85 + 90) / (85 + 90 + 10 + 15) = 175/200 = 0.875 = 87.5%
+- Precision = 85 / (85 + 10) = 85/95 = 0.895 = 89.5%
+- Recall = 85 / (85 + 15) = 85/100 = 0.85 = 85%
+- F1-Score = 2 × (0.895 × 0.85) / (0.895 + 0.85) = 1.52 / 1.745 = 0.871 = 87.1%
+```
+
+**Implementasi dalam kode:**
+```python
+def calculate_metrics(y_true, y_pred):
+    tp = np.sum((y_true == 1) & (y_pred == 1))   # True Positive
+    fp = np.sum((y_true == -1) & (y_pred == 1))  # False Positive
+    tn = np.sum((y_true == -1) & (y_pred == -1)) # True Negative
+    fn = np.sum((y_true == 1) & (y_pred == -1))  # False Negative
+
+    accuracy = (tp + tn) / (tp + fp + tn + fn)
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1_score': f1}
+```
 
 ---
 
